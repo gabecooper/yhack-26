@@ -3,7 +3,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const WINNING_SCORE = 5;
-
+const QUESTION_TIME_SEC = 20;
+const REVEAL_HOLD_MS = 4500;
+const LEADERBOARD_HOLD_MS = 5000;
 // ─── Supabase client ──────────────────────────────────────────────────────────
 const sb = {
   headers: () => ({
@@ -77,27 +79,74 @@ const sb = {
 };
 
 // ─── Polymarket API ───────────────────────────────────────────────────────────
+// `tag` = our UI / stored category id. `gammaSlug` = Polymarket Gamma `tag_slug` (must match their browse tags).
 const POLY_CATEGORIES = [
   { tag: "sports", name: "Sports", emoji: "\u26bd" },
+  { tag: "nba", name: "NBA", emoji: "\ud83c\udfc0" },
+  { tag: "nfl", name: "NFL", emoji: "\ud83c\udfc8" },
+  { tag: "soccer", name: "Soccer", emoji: "\ud83c\udfdf\ufe0f" },
   { tag: "politics", name: "Politics", emoji: "\ud83c\udfdb\ufe0f" },
+  { tag: "us-politics", name: "U.S. Politics", emoji: "\ud83c\uddfa\ud83c\uddf8" },
+  { tag: "elections", name: "Elections", emoji: "\ud83d\uddf3\ufe0f" },
+  { tag: "geopolitics", name: "Geopolitics", emoji: "\ud83c\udf0d" },
   { tag: "crypto", name: "Crypto", emoji: "\u20bf" },
+  { tag: "crypto-prices", name: "Crypto prices", emoji: "\ud83d\udcb1" },
   { tag: "pop-culture", name: "Pop Culture", emoji: "\ud83c\udfac" },
+  { tag: "music", name: "Music", emoji: "\ud83c\udfb5" },
+  { tag: "movies", name: "Movies", emoji: "\ud83c\udf7f" },
+  { tag: "youtube", name: "YouTube", emoji: "\u25b6\ufe0f" },
   { tag: "business", name: "Business", emoji: "\ud83d\udcbc" },
-  { tag: "science", name: "Science & Tech", emoji: "\ud83d\udd2c" },
+  { tag: "finance", name: "Finance", emoji: "\ud83c\udfe6" },
+  { tag: "economy", name: "Economy", emoji: "\ud83d\udcc8" },
+  { tag: "stocks", name: "Stocks", emoji: "\ud83d\udcc9" },
+  { tag: "fed", name: "Fed & rates", emoji: "\ud83d\udcb8" },
+  { tag: "commodities", name: "Commodities", emoji: "\ud83d\udee2\ufe0f" },
+  { tag: "science", gammaSlug: "tech", name: "Science & Tech", emoji: "\ud83d\udd2c" },
+  { tag: "ai", name: "AI", emoji: "\ud83e\udd16" },
+  { tag: "space", name: "Space", emoji: "\ud83d\udef0\ufe0f" },
+  { tag: "climate", name: "Climate", emoji: "\ud83c\udf21\ufe0f" },
+  { tag: "weather", name: "Weather", emoji: "\u26c8\ufe0f" },
+  { tag: "health", name: "Health", emoji: "\u2695\ufe0f" },
+  { tag: "esports", name: "Esports", emoji: "\ud83c\udfae" },
+  { tag: "chess", name: "Chess", emoji: "\u265f\ufe0f" },
 ];
 
+function gammaTagSlugForUiCategory(uiTag) {
+  const row = POLY_CATEGORIES.find((c) => c.tag === uiTag);
+  return row?.gammaSlug ?? row?.tag ?? uiTag;
+}
+
+const GAMMA_ORIGIN = "https://gamma-api.polymarket.com";
+
 async function polyFetch(url) {
-  // Try direct fetch first, then CORS proxy fallback
+  // In `vite` dev, use same-origin proxy (see vite.config.js) — avoids CORS entirely.
+  const primary =
+    import.meta.env.DEV && url.startsWith(GAMMA_ORIGIN)
+      ? "/polymarket-api" + url.slice(GAMMA_ORIGIN.length)
+      : url;
+
   try {
-    const res = await fetch(url);
+    const res = await fetch(primary);
     if (res.ok) return res.json();
   } catch {
-    // CORS blocked — try proxy
+    /* CORS or network */
   }
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-  const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error("Failed to fetch from Polymarket");
-  return res.json();
+
+  // Production / preview: public CORS proxies (corsproxy.io often 403s Polymarket).
+  const encoded = encodeURIComponent(url);
+  const fallbacks = [
+    `https://api.allorigins.win/raw?url=${encoded}`,
+    `https://corsproxy.io/?${encoded}`,
+  ];
+  for (const proxyUrl of fallbacks) {
+    try {
+      const res = await fetch(proxyUrl);
+      if (res.ok) return res.json();
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error("Failed to fetch from Polymarket");
 }
 
 function parseOutcomePrices(raw) {
@@ -106,74 +155,73 @@ function parseOutcomePrices(raw) {
   try { return JSON.parse(raw).map(Number); } catch { return []; }
 }
 
-async function fetchPolymarketQuestions(tags, questionsPerTag = 5) {
-  const allQuestions = [];
+function eventToQuestion(event, tag) {
+  if (!event?.markets?.length) return null;
 
-  for (const tag of tags) {
-    try {
-      const events = await polyFetch(
-        `https://gamma-api.polymarket.com/events?tag=${tag}&closed=false&active=true&limit=20&order=volume24hr&ascending=false`
-      );
+  if (event.markets.length >= 3) {
+    const markets = event.markets.slice(0, 4);
+    const options = markets.map(m => m.groupItemTitle || m.question?.replace(/^Will\s+/i, "").replace(/\?$/, "") || "Unknown");
+    const probabilities = markets.map(m => {
+      const prices = parseOutcomePrices(m.outcomePrices);
+      return prices[0] || 0;
+    });
+    if (options.length < 2) return null;
+    const topIdx = probabilities.indexOf(Math.max(...probabilities));
+    return {
+      question: event.title,
+      options,
+      probabilities,
+      correct: topIdx,
+      category: tag,
+      source: event.slug ? `https://polymarket.com/event/${event.slug}` : null,
+    };
+  }
 
-      if (!Array.isArray(events)) continue;
+  if (event.markets.length === 1) {
+    const market = event.markets[0];
+    const prices = parseOutcomePrices(market.outcomePrices);
+    const yesProb = prices[0] || 0.5;
+    const noProb = prices[1] || (1 - yesProb);
+    return {
+      question: event.title || market.question,
+      options: ["Yes", "No"],
+      probabilities: [yesProb, noProb],
+      correct: yesProb >= noProb ? 0 : 1,
+      category: tag,
+      source: event.slug ? `https://polymarket.com/event/${event.slug}` : null,
+    };
+  }
 
-      // Prefer multi-outcome events (3+ markets)
-      const multiOutcome = events.filter(e => e.markets && e.markets.length >= 3);
-      const binary = events.filter(e => e.markets && e.markets.length === 1);
+  return null;
+}
 
-      // Process multi-outcome events
-      for (const event of multiOutcome.slice(0, questionsPerTag)) {
-        const markets = event.markets.slice(0, 4); // max 4 options
-        const options = markets.map(m => m.groupItemTitle || m.question?.replace(/^Will\s+/i, "").replace(/\?$/, "") || "Unknown");
-        const probabilities = markets.map(m => {
-          const prices = parseOutcomePrices(m.outcomePrices);
-          return prices[0] || 0; // Yes price = probability
-        });
+/** Top-volume events from Gamma, then random `count` questions for one category tag. */
+async function fetchPolymarketQuestions(tag, count = 5) {
+  const poolLimit = 50;
+  const slug = gammaTagSlugForUiCategory(tag);
+  try {
+    // Gamma expects `tag_slug`, not `tag`. Using `tag=` returns mostly global trending (wrong category).
+    const events = await polyFetch(
+      `${GAMMA_ORIGIN}/events?tag_slug=${encodeURIComponent(slug)}&closed=false&active=true&limit=${poolLimit}&order=volume24hr&ascending=false`
+    );
+    if (!Array.isArray(events)) return [];
 
-        if (options.length < 2) continue;
-        const topIdx = probabilities.indexOf(Math.max(...probabilities));
-
-        allQuestions.push({
-          question: event.title,
-          options,
-          probabilities,
-          correct: topIdx,
-          category: tag,
-          source: event.slug ? `https://polymarket.com/event/${event.slug}` : null,
-        });
-      }
-
-      // Fill remaining with binary events if needed
-      const remaining = questionsPerTag - multiOutcome.slice(0, questionsPerTag).length;
-      if (remaining > 0) {
-        for (const event of binary.slice(0, remaining)) {
-          const market = event.markets[0];
-          const prices = parseOutcomePrices(market.outcomePrices);
-          const yesProb = prices[0] || 0.5;
-          const noProb = prices[1] || (1 - yesProb);
-
-          allQuestions.push({
-            question: event.title || market.question,
-            options: ["Yes", "No"],
-            probabilities: [yesProb, noProb],
-            correct: yesProb >= noProb ? 0 : 1,
-            category: tag,
-            source: event.slug ? `https://polymarket.com/event/${event.slug}` : null,
-          });
-        }
-      }
-    } catch (err) {
-      console.warn(`Failed to fetch ${tag} from Polymarket:`, err);
+    const candidates = [];
+    for (const event of events) {
+      const q = eventToQuestion(event, tag);
+      if (q) candidates.push(q);
     }
-  }
 
-  // Shuffle questions
-  for (let i = allQuestions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [allQuestions[i], allQuestions[j]] = [allQuestions[j], allQuestions[i]];
-  }
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
 
-  return allQuestions;
+    return candidates.slice(0, count);
+  } catch (err) {
+    console.warn(`Failed to fetch ${tag} from Polymarket:`, err);
+    return [];
+  }
 }
 
 // ─── Avatar colors ────────────────────────────────────────────────────────────
@@ -374,7 +422,7 @@ function LobbyScreen({ user, onCreateRoom, onJoinRoom, onSignOut, toast }) {
 // ─── ROOM SCREEN (Category Selection) ─────────────────────────────────────────
 function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
   const [players, setPlayers] = useState([]);
-  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [generating, setGenerating] = useState(false);
   const isHost = room.host_id === user.id;
   const pollRef = useRef();
@@ -392,22 +440,25 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
     return () => clearInterval(pollRef.current);
   }, [refresh]);
 
-  const toggleCategory = (tag) => {
-    setSelectedCategories(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
+  const selectCategory = (tag) => {
+    setSelectedCategory(prev => (prev === tag ? null : tag));
   };
 
   const startGame = async () => {
-    if (!selectedCategories.length) return toast("Select at least one category", "error");
+    if (!selectedCategory) return toast("Select a category", "error");
     setGenerating(true);
     try {
       await sb.update("rooms", `?id=eq.${room.id}`, { status: "generating" });
 
-      const questionsPerTag = Math.ceil(15 / selectedCategories.length);
-      const questions = await fetchPolymarketQuestions(selectedCategories, questionsPerTag);
+      const questions = await fetchPolymarketQuestions(selectedCategory, 5);
 
-      if (!questions.length) throw new Error("No questions found. Try different categories.");
+      if (questions.length < 5) {
+        throw new Error(
+          questions.length === 0
+            ? "No questions found. Try another category."
+            : `Only ${questions.length} markets available — try another category.`
+        );
+      }
 
       for (let i = 0; i < questions.length; i++) {
         const q = questions[i];
@@ -426,7 +477,13 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
         await sb.update("room_players", `?room_id=eq.${room.id}&player_id=eq.${p.player_id}`, { score: 0 });
       }
 
-      await sb.update("rooms", `?id=eq.${room.id}`, { status: "playing", current_question: 0 });
+      const roundDeadline = new Date(Date.now() + QUESTION_TIME_SEC * 1000).toISOString();
+      await sb.update("rooms", `?id=eq.${room.id}`, {
+        status: "playing",
+        current_question: 0,
+        game_phase: "question",
+        round_deadline: roundDeadline,
+      });
       toast("Game starting!", "success");
     } catch (e) {
       toast("Failed to start: " + e.message, "error");
@@ -437,7 +494,7 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
 
   return (
     <div style={{ minHeight: "100vh", background: G.bg, fontFamily: "'Segoe UI', sans-serif", padding: "1.5rem 1rem" }}>
-      <div style={{ maxWidth: 680, margin: "0 auto" }}>
+      <div style={{ maxWidth: 920, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
           <div>
             <div style={{ ...G.text, fontWeight: 800, fontSize: 22 }}>Room Lobby</div>
@@ -468,15 +525,15 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
         {isHost && (
           <>
             <div style={{ ...G.card, marginBottom: "1rem" }}>
-              <div style={{ ...G.muted, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.1em" }}>Choose Categories</div>
-              <p style={{ ...G.muted, marginBottom: 16 }}>Pick the prediction market topics for your game. Questions come live from Polymarket!</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ ...G.muted, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.1em" }}>Choose Category</div>
+              <p style={{ ...G.muted, marginBottom: 16 }}>Pick one topic. We load 5 random questions from the top Polymarket markets in that category.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))", gap: 10 }}>
                 {POLY_CATEGORIES.map(cat => {
-                  const isSelected = selectedCategories.includes(cat.tag);
+                  const isSelected = selectedCategory === cat.tag;
                   return (
                     <button
                       key={cat.tag}
-                      onClick={() => toggleCategory(cat.tag)}
+                      onClick={() => selectCategory(cat.tag)}
                       style={{
                         background: isSelected ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.06)",
                         border: isSelected ? "2px solid #667eea" : "2px solid rgba(255,255,255,0.1)",
@@ -503,9 +560,9 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
                 </div>
                 <div style={{ ...G.text, fontSize: 28 }}>{"\ud83c\udfc6"}</div>
               </div>
-              <button onClick={startGame} disabled={generating || !selectedCategories.length}
-                style={{ ...G.btn, background: "linear-gradient(135deg,#11998e,#38ef7d)", color: "#fff", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: !selectedCategories.length ? 0.5 : 1 }}>
-                {generating ? <><Spinner /> Fetching predictions...</> : `\ud83c\udfb2 Start Game (${selectedCategories.length} ${selectedCategories.length === 1 ? "category" : "categories"})`}
+              <button onClick={startGame} disabled={generating || !selectedCategory}
+                style={{ ...G.btn, background: "linear-gradient(135deg,#11998e,#38ef7d)", color: "#fff", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: !selectedCategory ? 0.5 : 1 }}>
+                {generating ? <><Spinner /> Fetching predictions...</> : "\ud83c\udfb2 Start Game (5 questions)"}
               </button>
             </div>
           </>
@@ -513,7 +570,7 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
         {!isHost && (
           <div style={{ ...G.card, textAlign: "center" }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>{"\u23f3"}</div>
-            <p style={G.muted}>Waiting for the host to pick categories and start the game...</p>
+            <p style={G.muted}>Waiting for the host to pick a category and start the game...</p>
           </div>
         )}
       </div>
@@ -521,22 +578,40 @@ function RoomScreen({ user, room, onGameStart, onLeave, toast }) {
   );
 }
 
-// ─── GAME SCREEN ──────────────────────────────────────────────────────────────
-function GameScreen({ user, room, onGameEnd, toast }) {
+// ─── GAME SCREEN (Kahoot-style: all answer or time up → reveal → leaderboard → next) ──
+function GameScreen({ user, room, onGameEnd }) {
+  const isHost = room.host_id === user.id;
+  const onGameEndRef = useRef(onGameEnd);
+  useEffect(() => { onGameEndRef.current = onGameEnd; }, [onGameEnd]);
+
   const [questions, setQuestions] = useState([]);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(() => Number(room.current_question) || 0);
   const [selected, setSelected] = useState(null);
   const [answered, setAnswered] = useState(false);
   const [allAnswers, setAllAnswers] = useState({});
   const [players, setPlayers] = useState([]);
-  const [timeLeft, setTimeLeft] = useState(20);
-  const [phase, setPhase] = useState("question"); // question | reveal
+  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_SEC);
+  const [phase, setPhase] = useState(room.game_phase || "question");
+  const [roundDeadline, setRoundDeadline] = useState(room.round_deadline || null);
   const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState({});
   const [winner, setWinner] = useState(null);
-  const timerRef = useRef();
-  const pollRef = useRef();
-  const isHost = room.host_id === user.id;
+
+  const finalizedRef = useRef(null);
+  const revealTimeoutRef = useRef(null);
+  const leaderboardTimeoutRef = useRef(null);
+  const playersRef = useRef([]);
+  const currentIdxRef = useRef(currentIdx);
+  const questionsRef = useRef([]);
+
+  useEffect(() => { playersRef.current = players; }, [players]);
+  useEffect(() => { currentIdxRef.current = currentIdx; }, [currentIdx]);
+  useEffect(() => { questionsRef.current = questions; }, [questions]);
+
+  useEffect(() => () => {
+    clearTimeout(revealTimeoutRef.current);
+    clearTimeout(leaderboardTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -557,7 +632,6 @@ function GameScreen({ user, room, onGameEnd, toast }) {
 
   const curQ = questions[currentIdx];
 
-  // Parse probabilities from explanation field
   const getQuestionMeta = (q) => {
     if (!q) return { probabilities: [], source: null, category: null };
     try {
@@ -577,7 +651,6 @@ function GameScreen({ user, room, onGameEnd, toast }) {
     }
   }, [curQ?.id]);
 
-  // Refresh scores
   const refreshScores = useCallback(async () => {
     const ps = await sb.query("room_players", `?room_id=eq.${room.id}&select=*,profiles(*)`);
     if (Array.isArray(ps)) {
@@ -585,48 +658,178 @@ function GameScreen({ user, room, onGameEnd, toast }) {
       const sc = {};
       ps.forEach(p => { sc[p.player_id] = p.score || 0; });
       setScores(sc);
-      // Check for winner
       const w = ps.find(p => (p.score || 0) >= WINNING_SCORE);
       if (w) setWinner(w);
     }
   }, [room.id]);
 
-  // Timer
+  const runAdvanceFromLeaderboard = useCallback(async () => {
+    clearTimeout(revealTimeoutRef.current);
+    clearTimeout(leaderboardTimeoutRef.current);
+    const idx = currentIdxRef.current;
+    const qlen = questionsRef.current.length;
+    await refreshScores();
+    const ps = await sb.query("room_players", `?room_id=eq.${room.id}&select=*`);
+    const win = Array.isArray(ps) && ps.find(p => (p.score || 0) >= WINNING_SCORE);
+    if (win) {
+      await sb.update("rooms", `?id=eq.${room.id}`, { status: "finished" });
+      onGameEndRef.current();
+      return;
+    }
+    if (idx >= qlen - 1) {
+      await sb.update("rooms", `?id=eq.${room.id}`, { status: "finished" });
+      onGameEndRef.current();
+      return;
+    }
+    const next = idx + 1;
+    const deadline = new Date(Date.now() + QUESTION_TIME_SEC * 1000).toISOString();
+    await sb.update("rooms", `?id=eq.${room.id}`, {
+      current_question: next,
+      game_phase: "question",
+      round_deadline: deadline,
+    });
+    setCurrentIdx(next);
+    setSelected(null);
+    setAnswered(false);
+    setAllAnswers({});
+    setRoundDeadline(deadline);
+    setPhase("question");
+    finalizedRef.current = null;
+  }, [room.id, refreshScores]);
+
+  const finalizeQuestionRoundHost = useCallback(async () => {
+    const cq = curQ;
+    if (!cq) return;
+    if (!playersRef.current.length) return;
+
+    // No answer row => wrong (Kahoot). We do not insert stubs for other players (often blocked by RLS).
+    await sb.update("rooms", `?id=eq.${room.id}`, { game_phase: "reveal" });
+    await refreshAnswers();
+    await refreshScores();
+    setPhase("reveal");
+
+    clearTimeout(revealTimeoutRef.current);
+    clearTimeout(leaderboardTimeoutRef.current);
+
+    revealTimeoutRef.current = setTimeout(async () => {
+      await sb.update("rooms", `?id=eq.${room.id}`, { game_phase: "leaderboard" });
+      setPhase("leaderboard");
+      await refreshScores();
+      leaderboardTimeoutRef.current = setTimeout(() => {
+        void runAdvanceFromLeaderboard();
+      }, LEADERBOARD_HOLD_MS);
+    }, REVEAL_HOLD_MS);
+  }, [curQ, room.id, refreshAnswers, refreshScores, runAdvanceFromLeaderboard]);
+
+  // Sync timer from server deadline (all clients)
   useEffect(() => {
-    if (loading || !curQ || phase !== "question") return;
-    setTimeLeft(20);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(timerRef.current); setPhase("reveal"); return 0; }
-        return t - 1;
+    if (phase !== "question" || !roundDeadline) return;
+    const tick = () => {
+      const s = Math.max(0, Math.ceil((new Date(roundDeadline).getTime() - Date.now()) / 1000));
+      setTimeLeft(s);
+    };
+    tick();
+    const id = setInterval(tick, 300);
+    return () => clearInterval(id);
+  }, [phase, roundDeadline]);
+
+  // Everyone: poll room row for phase / index / deadline
+  useEffect(() => {
+    const id = setInterval(async () => {
+      const r = await sb.query("rooms", `?id=eq.${room.id}`);
+      const row = r[0];
+      if (!row) return;
+      if (row.status === "finished") {
+        onGameEndRef.current();
+        return;
+      }
+      if (row.round_deadline) setRoundDeadline(row.round_deadline);
+      if (row.game_phase && ["question", "reveal", "leaderboard"].includes(row.game_phase)) {
+        setPhase(row.game_phase);
+      }
+      const cqNum = row.current_question;
+      if (typeof cqNum === "number" && cqNum !== currentIdxRef.current) {
+        setCurrentIdx(cqNum);
+        setSelected(null);
+        setAnswered(false);
+        setAllAnswers({});
+        finalizedRef.current = null;
+      }
+    }, 800);
+    return () => clearInterval(id);
+  }, [room.id]);
+
+  // Host: ensure first round has deadline + phase in DB (if missing)
+  useEffect(() => {
+    if (!isHost || loading || !curQ) return;
+    (async () => {
+      const r = await sb.query("rooms", `?id=eq.${room.id}`);
+      const row = r[0];
+      if (row?.round_deadline && row?.game_phase === "question") return;
+      const deadline = new Date(Date.now() + QUESTION_TIME_SEC * 1000).toISOString();
+      await sb.update("rooms", `?id=eq.${room.id}`, {
+        current_question: currentIdxRef.current,
+        game_phase: "question",
+        round_deadline: deadline,
       });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [currentIdx, loading, phase]);
+      setRoundDeadline(deadline);
+      setPhase("question");
+    })();
+  }, [isHost, loading, curQ?.id, room.id]);
 
-  // Poll answers during question phase
+  // Host: when everyone answered or time is up, lock round once
   useEffect(() => {
-    if (phase !== "question") return;
-    pollRef.current = setInterval(refreshAnswers, 2000);
-    return () => clearInterval(pollRef.current);
-  }, [phase, refreshAnswers]);
+    if (!isHost || phase !== "question" || !curQ || loading) return;
+    if (!playersRef.current.length) return;
+    const qid = curQ.id;
+    const iv = setInterval(async () => {
+      try {
+        const [ansRows, roomRows] = await Promise.all([
+          sb.query("answers", `?question_id=eq.${qid}`),
+          sb.query("rooms", `?id=eq.${room.id}`),
+        ]);
+        const n = Array.isArray(ansRows) ? ansRows.length : 0;
+        const row = roomRows?.[0];
+        const dl = row?.round_deadline ? new Date(row.round_deadline).getTime() : 0;
+        const timedOut = dl > 0 && Date.now() >= dl;
+        const allIn = n >= playersRef.current.length;
+        if (!allIn && !timedOut) return;
+        if (finalizedRef.current === qid) return;
+        finalizedRef.current = qid;
+        clearInterval(iv);
+        await finalizeQuestionRoundHost();
+      } catch (e) {
+        console.warn(e);
+      }
+    }, 400);
+    return () => clearInterval(iv);
+  }, [isHost, phase, curQ?.id, loading, room.id, finalizeQuestionRoundHost]);
 
-  // Refresh scores on reveal
   useEffect(() => {
-    if (phase === "reveal") refreshScores();
+    if (!curQ) return;
+    if (phase === "question") {
+      const t = setInterval(refreshAnswers, 1000);
+      return () => clearInterval(t);
+    }
+    if (phase === "reveal") refreshAnswers();
+  }, [curQ?.id, phase, refreshAnswers]);
+
+  useEffect(() => {
+    if (phase === "reveal" || phase === "leaderboard") refreshScores();
   }, [phase, refreshScores]);
 
   const submitAnswer = async (optIdx) => {
-    if (answered || phase === "reveal") return;
+    if (answered || phase !== "question") return;
+    if (!curQ) return;
     setSelected(optIdx);
     setAnswered(true);
     const isCorrect = optIdx === curQ.correct_answer;
     await sb.insert("answers", {
-      question_id: curQ.id, player_id: user.id,
-      selected_option: optIdx, is_correct: isCorrect,
+      question_id: curQ.id,
+      player_id: user.id,
+      selected_option: optIdx,
+      is_correct: isCorrect,
     });
-    // Update score for ALL players (not just host)
     if (isCorrect) {
       const currentScore = scores[user.id] || 0;
       await sb.update("room_players", `?room_id=eq.${room.id}&player_id=eq.${user.id}`, { score: currentScore + 1 });
@@ -634,40 +837,6 @@ function GameScreen({ user, room, onGameEnd, toast }) {
     }
     refreshAnswers();
   };
-
-  const nextQuestion = async () => {
-    // Check if someone won
-    if (winner) {
-      await sb.update("rooms", `?id=eq.${room.id}`, { status: "finished" });
-      onGameEnd();
-      return;
-    }
-    if (currentIdx >= questions.length - 1) {
-      await sb.update("rooms", `?id=eq.${room.id}`, { status: "finished" });
-      onGameEnd();
-      return;
-    }
-    await sb.update("rooms", `?id=eq.${room.id}`, { current_question: currentIdx + 1 });
-    setCurrentIdx(i => i + 1);
-    setSelected(null);
-    setAnswered(false);
-    setAllAnswers({});
-    setPhase("question");
-  };
-
-  // Non-host polls for question advancement
-  useEffect(() => {
-    if (isHost) return;
-    const check = setInterval(async () => {
-      const r = await sb.query("rooms", `?id=eq.${room.id}`);
-      if (r[0]?.status === "finished") { onGameEnd(); return; }
-      if (r[0]?.current_question > currentIdx) {
-        setCurrentIdx(r[0].current_question);
-        setSelected(null); setAnswered(false); setAllAnswers({}); setPhase("question");
-      }
-    }, 2000);
-    return () => clearInterval(check);
-  }, [isHost, currentIdx]);
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: G.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -683,114 +852,141 @@ function GameScreen({ user, room, onGameEnd, toast }) {
   const totalAnswered = Object.keys(allAnswers).length;
   const categoryInfo = POLY_CATEGORIES.find(c => c.tag === meta.category);
 
+  const myRow = allAnswers[user.id];
+  const myPickRaw = myRow?.selected_option;
+  const myPick = myPickRaw !== undefined && myPickRaw !== null ? Number(myPickRaw) : selected;
+  const missedRound = phase === "reveal" && !myRow;
+  const pickedRight = !!myRow && myPick === curQ.correct_answer;
+  const pickedWrong = !!myRow && myPick !== curQ.correct_answer;
+
+  const podiumColors = ["#f1c40f","#bdc3c7","#cd7f32"];
+  const medals = ["\ud83e\udd47","\ud83e\udd48","\ud83e\udd49"];
+  const sortedPodium = [...players].sort((a, b) => (scores[b.player_id] || 0) - (scores[a.player_id] || 0));
+
   return (
     <div style={{ minHeight: "100vh", background: G.bg, fontFamily: "'Segoe UI', sans-serif", padding: "1.5rem 1rem" }}>
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {categoryInfo && <span style={{ fontSize: 18 }}>{categoryInfo.emoji}</span>}
-            <span style={G.muted}>Question {currentIdx + 1} of {questions.length}</span>
+            <span style={G.muted}>
+              {phase === "leaderboard" ? "Leaderboard" : `Question ${currentIdx + 1} of ${questions.length}`}
+            </span>
           </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ ...G.text, fontWeight: 800, fontSize: 22, color: timeLeft <= 5 ? "#e74c3c" : "#2ecc71" }}>{timeLeft}s</div>
-            <div style={{ ...G.muted, fontSize: 12 }}>{totalAnswered}/{players.length} answered</div>
-          </div>
-        </div>
-
-        {/* Score bar */}
-        <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
-          {[...players].sort((a, b) => (scores[b.player_id] || 0) - (scores[a.player_id] || 0)).map(p => (
-            <div key={p.player_id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "rgba(255,255,255,0.06)", borderRadius: 20, border: p.player_id === user.id ? "1px solid rgba(102,126,234,0.5)" : "1px solid transparent" }}>
-              <Avatar name={p.profiles?.username} color={p.profiles?.avatar_color} size={20} />
-              <span style={{ ...G.text, fontSize: 12, fontWeight: 600 }}>{scores[p.player_id] || 0}</span>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>/{WINNING_SCORE}</span>
+          {phase === "question" && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ ...G.text, fontWeight: 800, fontSize: 22, color: timeLeft <= 5 ? "#e74c3c" : "#2ecc71" }}>{timeLeft}s</div>
+              <div style={{ ...G.muted, fontSize: 12 }}>{totalAnswered}/{players.length} answered</div>
             </div>
-          ))}
+          )}
+          {phase === "reveal" && <div style={{ ...G.text, fontWeight: 700, fontSize: 14, color: "#2ecc71" }}>Answer reveal</div>}
+          {phase === "leaderboard" && <div style={{ ...G.muted, fontSize: 13 }}>Next question in a moment...</div>}
         </div>
 
-        {/* Progress bar */}
+        {phase !== "leaderboard" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
+            {sortedPodium.map(p => (
+              <div key={p.player_id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "rgba(255,255,255,0.06)", borderRadius: 20, border: p.player_id === user.id ? "1px solid rgba(102,126,234,0.5)" : "1px solid transparent" }}>
+                <Avatar name={p.profiles?.username} color={p.profiles?.avatar_color} size={20} />
+                <span style={{ ...G.text, fontSize: 12, fontWeight: 600 }}>{scores[p.player_id] || 0}</span>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>/{WINNING_SCORE}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 4, marginBottom: "1.5rem" }}>
           <div style={{ height: "100%", background: "linear-gradient(90deg,#667eea,#764ba2)", borderRadius: 4, width: `${((currentIdx) / questions.length) * 100}%`, transition: "width 0.5s" }} />
         </div>
 
-        {/* Question */}
-        <div style={{ ...G.card, textAlign: "center", marginBottom: "1.5rem" }}>
-          <div style={{ ...G.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>What does the market predict?</div>
-          <div style={{ ...G.text, fontSize: 20, fontWeight: 700, lineHeight: 1.4 }}>{curQ.question_text}</div>
-        </div>
-
-        {/* Options */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1.5rem" }}>
-          {options.map((opt, i) => {
-            let border = "2px solid transparent";
-            let bg = `${optionColors[i % optionColors.length]}22`;
-            const prob = meta.probabilities?.[i];
-            const isCorrectAnswer = i === curQ.correct_answer;
-
-            if (phase === "reveal") {
-              if (isCorrectAnswer) {
-                bg = `${optionColors[i % optionColors.length]}44`;
-                border = `2px solid ${optionColors[i % optionColors.length]}`;
-              } else if (i === selected) {
-                bg = "rgba(231,76,60,0.2)";
-                border = "2px solid #e74c3c";
-              }
-            } else if (selected === i) {
-              bg = `${optionColors[i % optionColors.length]}55`;
-              border = `2px solid ${optionColors[i % optionColors.length]}`;
-            }
-
-            return (
-              <button key={i} onClick={() => submitAnswer(i)} disabled={answered || phase === "reveal"}
-                style={{ background: bg, border, borderRadius: 12, padding: "1rem", color: "#fff", fontWeight: 600, fontSize: 15, cursor: answered ? "default" : "pointer", textAlign: "left", transition: "all 0.2s", position: "relative" }}>
-                <span style={{ opacity: 0.6, fontSize: 12, display: "block", marginBottom: 4 }}>{["A","B","C","D"][i]}</span>
-                {opt}
-                {phase === "reveal" && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ height: "100%", background: isCorrectAnswer ? "#2ecc71" : optionColors[i % optionColors.length], borderRadius: 3, width: `${(prob || 0) * 100}%`, transition: "width 0.8s ease-out" }} />
-                    </div>
-                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 4, fontWeight: 700 }}>
-                      {((prob || 0) * 100).toFixed(1)}%
-                    </div>
-                  </div>
-                )}
-                {phase === "reveal" && isCorrectAnswer && <span style={{ position: "absolute", top: 8, right: 10, fontSize: 18 }}>{"\u2713"}</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Reveal panel */}
-        {phase === "reveal" && (
-          <div style={{ ...G.card, marginBottom: "1rem" }}>
-            <div style={{ ...G.text, fontWeight: 700, marginBottom: 6 }}>
-              {selected === curQ.correct_answer
-                ? "\u2705 You matched the market's top pick! +1 point"
-                : "\u274c The market disagrees with you"}
-            </div>
-            <div style={G.muted}>
-              Polymarket data as of right now{meta.source && (
-                <span> &mdash; <a href={meta.source} target="_blank" rel="noopener noreferrer" style={{ color: "#667eea" }}>View on Polymarket</a></span>
-              )}
-            </div>
-
+        {phase === "leaderboard" ? (
+          <div style={G.card}>
+            <div style={{ ...G.text, fontWeight: 800, fontSize: 22, marginBottom: 16, textAlign: "center" }}>{"\ud83c\udfc6"} Standings</div>
+            {sortedPodium.map((p, i) => (
+              <div key={p.player_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 0", borderBottom: i < sortedPodium.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                <div style={{ fontSize: 22, width: 36 }}>{medals[i] || `#${i + 1}`}</div>
+                <Avatar name={p.profiles?.username} color={p.profiles?.avatar_color} size={36} />
+                <div style={{ flex: 1, textAlign: "left" }}>
+                  <div style={{ ...G.text, fontWeight: 700 }}>{p.profiles?.username}</div>
+                  {p.player_id === user.id && <div style={{ fontSize: 11, color: "#667eea" }}>You</div>}
+                </div>
+                <div style={{ ...G.text, fontSize: 24, fontWeight: 800, color: podiumColors[i] || "#fff" }}>
+                  {scores[p.player_id] || 0}
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginLeft: 4 }}>pts</span>
+                </div>
+              </div>
+            ))}
             {winner && (
-              <div style={{ marginTop: 12, padding: "12px 16px", background: "rgba(241,196,15,0.15)", borderRadius: 10, border: "1px solid rgba(241,196,15,0.3)" }}>
-                <div style={{ ...G.text, fontWeight: 800, fontSize: 18 }}>
-                  {"\ud83c\udfc6"} {winner.profiles?.username} wins with {WINNING_SCORE} points!
+              <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(241,196,15,0.15)", borderRadius: 10, border: "1px solid rgba(241,196,15,0.3)", textAlign: "center" }}>
+                <div style={{ ...G.text, fontWeight: 800, fontSize: 17 }}>
+                  {"\ud83c\udfc6"} {winner.profiles?.username} reached {WINNING_SCORE} points!
                 </div>
               </div>
             )}
-
-            {isHost && (
-              <button onClick={nextQuestion} style={{ ...G.btn, background: "linear-gradient(135deg,#11998e,#38ef7d)", color: "#fff", marginTop: 12 }}>
-                {winner ? "See Final Results \u2192" : currentIdx >= questions.length - 1 ? "See Final Results \u2192" : "Next Question \u2192"}
-              </button>
-            )}
-            {!isHost && <div style={{ ...G.muted, marginTop: 8, fontSize: 12 }}>Waiting for host to continue...</div>}
           </div>
+        ) : (
+          <>
+            <div style={{ ...G.card, textAlign: "center", marginBottom: "1.5rem" }}>
+              <div style={{ ...G.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>What does the market predict?</div>
+              <div style={{ ...G.text, fontSize: 20, fontWeight: 700, lineHeight: 1.4 }}>{curQ.question_text}</div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1.5rem" }}>
+              {options.map((opt, i) => {
+                let border = "2px solid transparent";
+                let bg = `${optionColors[i % optionColors.length]}22`;
+                const prob = meta.probabilities?.[i];
+                const isCorrectAnswer = i === curQ.correct_answer;
+
+                if (phase === "reveal") {
+                  if (isCorrectAnswer) {
+                    bg = `${optionColors[i % optionColors.length]}44`;
+                    border = `2px solid ${optionColors[i % optionColors.length]}`;
+                  } else if (myRow && i === myPick) {
+                    bg = "rgba(231,76,60,0.2)";
+                    border = "2px solid #e74c3c";
+                  }
+                } else if (selected === i) {
+                  bg = `${optionColors[i % optionColors.length]}55`;
+                  border = `2px solid ${optionColors[i % optionColors.length]}`;
+                }
+
+                return (
+                  <button key={i} type="button" onClick={() => submitAnswer(i)} disabled={answered || phase !== "question"}
+                    style={{ background: bg, border, borderRadius: 12, padding: "1rem", color: "#fff", fontWeight: 600, fontSize: 15, cursor: phase === "question" && !answered ? "pointer" : "default", textAlign: "left", transition: "all 0.2s", position: "relative" }}>
+                    <span style={{ opacity: 0.6, fontSize: 12, display: "block", marginBottom: 4 }}>{["A","B","C","D"][i]}</span>
+                    {opt}
+                    {phase === "reveal" && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ height: "100%", background: isCorrectAnswer ? "#2ecc71" : optionColors[i % optionColors.length], borderRadius: 3, width: `${(prob || 0) * 100}%`, transition: "width 0.8s ease-out" }} />
+                        </div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 4, fontWeight: 700 }}>
+                          {((prob || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
+                    {phase === "reveal" && isCorrectAnswer && <span style={{ position: "absolute", top: 8, right: 10, fontSize: 18 }}>{"\u2713"}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {phase === "reveal" && (
+              <div style={{ ...G.card, marginBottom: "1rem" }}>
+                <div style={{ ...G.text, fontWeight: 700, marginBottom: 6 }}>
+                  {missedRound && "\u23f0 Time\u2019s up — no answer (counts as wrong)."}
+                  {!missedRound && pickedRight && "\u2705 You matched the market\u2019s top pick! +1 point"}
+                  {!missedRound && pickedWrong && "\u274c The market disagrees with your pick"}
+                </div>
+                <div style={G.muted}>
+                  Polymarket data as of right now{meta.source && (
+                    <span> &mdash; <a href={meta.source} target="_blank" rel="noopener noreferrer" style={{ color: "#667eea" }}>View on Polymarket</a></span>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -874,7 +1070,7 @@ export default function App() {
       {screen === "auth" && <AuthScreen onAuth={handleAuth} toast={showToast} />}
       {screen === "lobby" && <LobbyScreen user={user} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} onSignOut={handleSignOut} toast={showToast} />}
       {screen === "room" && <RoomScreen user={user} room={room} onGameStart={handleGameStart} onLeave={handleLeave} toast={showToast} />}
-      {screen === "game" && <GameScreen user={user} room={room} onGameEnd={handleGameEnd} toast={showToast} />}
+      {screen === "game" && <GameScreen user={user} room={room} onGameEnd={handleGameEnd} />}
       {screen === "results" && <ResultsScreen user={user} room={room} onLeave={handleLeave} />}
       <style>{`* { box-sizing: border-box; } body { margin: 0; } input::placeholder { color: rgba(255,255,255,0.3); } textarea::placeholder { color: rgba(255,255,255,0.3); } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
