@@ -25,7 +25,7 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
   };
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-3">
       {pdfs.map(pdf => {
         const badge = STATUS_BADGE[pdf.status];
         const uploader = pdf.uploadedBy
@@ -35,7 +35,7 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
         return (
           <div
             key={pdf.id}
-            className="group relative border-b border-white/15 py-4 pr-8"
+            className="group relative rounded-[1.4rem] border border-white/15 bg-white/5 px-4 py-3 pr-12"
           >
             <button
               onClick={() => removePdf(pdf.id)}
@@ -45,28 +45,28 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
               ×
             </button>
 
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               {uploader && (
                 <CharacterAvatar characterIndex={uploader.characterIndex} size={20} />
               )}
-              <span className="font-ui text-sm text-white truncate flex-1">
+              <span className="flex-1 truncate font-ui text-sm text-white">
                 {pdf.filename}
               </span>
-              <span className={`font-ui text-xs px-2 py-0.5 rounded-full ${badge.color}`}>
+              <span className={`rounded-full px-2 py-0.5 font-ui text-xs ${badge.color}`}>
                 {badge.label}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {pdf.status === 'ready' && (
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex cursor-pointer items-center gap-2 rounded-full border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-3 py-1.5">
                   <input
                     type="checkbox"
                     checked={pdf.enabled}
                     onChange={e => togglePdf(pdf.id, e.target.checked)}
                     className="w-4 h-4 accent-vault-gold"
                   />
-                  <span className="font-ui text-xs text-gray-400">
+                  <span className="font-ui text-xs text-[#f3c77a]">
                     {pdf.questionCount} questions
                   </span>
                 </label>
@@ -76,20 +76,18 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
                 <>
                   <button
                     onClick={() => approvePdf(pdf.id)}
-                    className="font-ui text-xs px-2 py-1 rounded bg-vault-green/20 text-vault-green hover:bg-vault-green/30"
+                    className="rounded-full bg-vault-green/20 px-3 py-1.5 font-ui text-xs text-vault-green hover:bg-vault-green/30"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => rejectPdf(pdf.id)}
-                    className="font-ui text-xs px-2 py-1 rounded bg-vault-red/20 text-vault-red hover:bg-vault-red/30"
+                    className="rounded-full bg-vault-red/20 px-3 py-1.5 font-ui text-xs text-vault-red hover:bg-vault-red/30"
                   >
                     Reject
                   </button>
                 </>
               )}
-
-              <div className="flex-1" />
             </div>
           </div>
         );
@@ -97,9 +95,11 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
 
       <button
         onClick={handleUploadClick}
-        className="mt-2 w-full border-b border-dashed border-white/20 py-4 text-left transition-colors hover:border-white/40"
+        className="flex h-[4.25rem] w-full items-center rounded-[1.4rem] border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-4 text-left transition-colors hover:border-[#f59e0b]/50 hover:bg-[#f59e0b]/14"
       >
-        <span className="font-ui text-sm text-gray-300">+ Upload coursework</span>
+        <span className="font-ui text-sm font-semibold uppercase tracking-[0.14em] text-[#f3c77a]">
+          + Upload coursework
+        </span>
       </button>
     </div>
   );

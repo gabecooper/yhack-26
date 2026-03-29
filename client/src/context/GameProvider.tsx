@@ -28,6 +28,8 @@ const STORAGE_KEYS = {
 
 const SNAPSHOT_PREFIX = 'heist_host_snapshot:';
 const JOIN_REQUEST_TIMEOUT_MS = 4000;
+const HOST_ROOM_CLAIM_RETRIES = 12;
+const HOST_ROOM_CONFLICT_ERROR = 'HOST_ROOM_CONFLICT';
 
 interface JoinRequestPayload {
   roomCode: string;
@@ -353,16 +355,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
       presenceKey: string;
       playerId?: string;
       initialState?: GameState;
+      rejectIfOccupiedByHost?: boolean;
     },
   ) => {
     if (!supabase) {
       throw new Error('Supabase is not configured.');
     }
 
+    const client = supabase;
+
     await teardownChannel();
     isHostRef.current = options.asHost;
 
-    const channel = supabase.channel(`heist-room:${roomCode}`, {
+    const channel = client.channel(`heist-room:${roomCode}`, {
       config: {
         broadcast: { ack: true },
         presence: {
@@ -425,13 +430,41 @@ export function GameProvider({ children }: { children: ReactNode }) {
     await new Promise<void>((resolve, reject) => {
       channel.subscribe(async (status, error) => {
         if (status === 'SUBSCRIBED') {
-          void channel.track(
+          const presencePayload =
             options.asHost
               ? { role: 'host' }
-              : { role: 'player', playerId: options.playerId }
-          ).catch(trackError => {
+              : { role: 'player', playerId: options.playerId };
+
+          try {
+            await channel.track(presencePayload);
+          } catch (trackError) {
             console.error('Unable to track Supabase presence', trackError);
-          });
+          }
+
+          if (options.asHost && options.rejectIfOccupiedByHost) {
+            const hostAlreadyPresent = await detectOtherHostPresence(channel, options.presenceKey);
+
+            if (hostAlreadyPresent) {
+              if (channelRef.current === channel) {
+                channelRef.current = null;
+              }
+
+              try {
+                await channel.untrack();
+              } catch (error) {
+                console.error('Unable to clear Supabase presence', error);
+              }
+
+              try {
+                await client.removeChannel(channel);
+              } catch (error) {
+                console.error('Unable to remove Supabase channel', error);
+              }
+
+              reject(new Error(HOST_ROOM_CONFLICT_ERROR));
+              return;
+            }
+          }
 
           if (options.asHost) {
             const initialState =
@@ -493,7 +526,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       hasRestoredSessionRef.current = true;
       void subscribeToRoom(storedRoomCode, {
         asHost: true,
-        presenceKey: `host:${user.id}`,
+        presenceKey: createHostPresenceKey(user.id),
       });
       return;
     }
@@ -552,26 +585,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const roomCode = generateRoomCode();
-    const initialState = createRealtimeRoomState(roomCode);
-    const optimisticState = {
-      ...initialState,
-      phase: 'room' as const,
-    };
+    for (let attempt = 0; attempt < HOST_ROOM_CLAIM_RETRIES; attempt += 1) {
+      const roomCode = generateRoomCode();
+      const initialState = createRealtimeRoomState(roomCode);
 
-    isHostRef.current = true;
-    window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
-    window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
-    setLocalState(optimisticState);
+      try {
+        await subscribeToRoom(roomCode, {
+          asHost: true,
+          presenceKey: createHostPresenceKey(user.id),
+          initialState,
+          rejectIfOccupiedByHost: true,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof Error && error.message === HOST_ROOM_CONFLICT_ERROR) {
+          continue;
+        }
 
-    void subscribeToRoom(roomCode, {
-      asHost: true,
-      presenceKey: `host:${user.id}`,
-      initialState,
-    }).catch(error => {
-      console.error('Unable to subscribe host room', error);
-    });
-  }, [setLocalState, subscribeToRoom, user]);
+        console.error('Unable to subscribe host room', error);
+        return;
+      }
+    }
+
+    console.error('Unable to claim a unique realtime room code after multiple attempts');
+  }, [subscribeToRoom, supabase, user]);
 
   const joinRoom = useCallback(async (roomCode: string, playerName: string): Promise<string | null> => {
     if (!supabase) {
@@ -1059,6 +1096,35 @@ function getTimeRemaining(roundDeadlineAt: string): number {
 
 function getSnapshotStorageKey(roomCode: string) {
   return `${SNAPSHOT_PREFIX}${roomCode}`;
+}
+
+function createHostPresenceKey(userId: string) {
+  return `host:${userId}:${crypto.randomUUID()}`;
+}
+
+async function detectOtherHostPresence(
+  channel: RealtimeChannel,
+  ownPresenceKey: string,
+  attempts = 4,
+  delayMs = 120,
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const presenceState = channel.presenceState<PresencePayload>();
+    const hasOtherHost = Object.entries(presenceState).some(([presenceKey, entries]) =>
+      presenceKey !== ownPresenceKey
+      && entries.some(entry => entry.role === 'host')
+    );
+
+    if (hasOtherHost) {
+      return true;
+    }
+
+    await new Promise(resolve => {
+      window.setTimeout(resolve, delayMs);
+    });
+  }
+
+  return false;
 }
 
 function readStoredSnapshot(roomCode: string): GameState | null {

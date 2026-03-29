@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useAppFlow } from '@/app/AppFlowContext';
+import { useGameActions, useGameState } from '@/context/GameContext';
 
 interface SettingsGearProps {
   minimal?: boolean;
@@ -12,9 +13,15 @@ interface SettingsGearProps {
 export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isEndingGame, setIsEndingGame] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
   const { flow, clearFlow } = useAppFlow();
+  const { roomCode } = useGameState();
+  const { setPhase } = useGameActions();
+  const isHostRoute = location.pathname.startsWith('/host');
+  const canEndGame = isHostRoute && Boolean(roomCode);
   const gearPositionStyle =
     side === 'left'
       ? {
@@ -43,6 +50,17 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
     clearFlow();
     setIsOpen(false);
     navigate('/start');
+  };
+
+  const handleEndGame = async () => {
+    setIsEndingGame(true);
+
+    try {
+      setPhase('home');
+      setIsOpen(false);
+    } finally {
+      setIsEndingGame(false);
+    }
   };
 
   return (
@@ -102,6 +120,24 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
                   Switch Flow
                 </button>
               </div>
+              {canEndGame && (
+                <div className="mt-6 rounded-2xl bg-red-50 px-4 py-3 font-ui">
+                  <p className="text-xs uppercase tracking-[0.24em] text-[#7f1d1d]">Host Controls</p>
+                  <p className="mt-2 text-sm text-[#991b1b]">
+                    End the current game and send everyone back to the home screen.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleEndGame();
+                    }}
+                    disabled={isEndingGame}
+                    className="mt-4 w-full rounded-xl border border-[#7f1d1d]/10 bg-[#991b1b] px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-[#7f1d1d] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isEndingGame ? 'Ending Game...' : 'End Game'}
+                  </button>
+                </div>
+              )}
               {user && (
                 <div className="mt-6 rounded-2xl bg-black/5 px-4 py-3 font-ui">
                   <p className="text-xs uppercase tracking-[0.24em] text-[#4a5568]">Signed In</p>
