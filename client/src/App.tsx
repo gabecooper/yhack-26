@@ -49,6 +49,26 @@ function RealRoute() {
   return <RealStartView />;
 }
 
+function AuthRoute() {
+  if (isPhoneDevice()) {
+    return <Navigate to="/play" replace />;
+  }
+
+  return <AuthView />;
+}
+
+function HostRoute() {
+  if (isPhoneDevice()) {
+    return <Navigate to="/play" replace />;
+  }
+
+  return (
+    <RequireAuth>
+      <HostApp />
+    </RequireAuth>
+  );
+}
+
 export function App() {
   return (
     <AppFlowProvider>
@@ -58,15 +78,8 @@ export function App() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/start" element={<StartRoute />} />
             <Route path="/real" element={<RealRoute />} />
-            <Route path="/auth" element={<AuthView />} />
-            <Route
-              path="/host/*"
-              element={(
-                <RequireAuth>
-                  <HostApp />
-                </RequireAuth>
-              )}
-            />
+            <Route path="/auth" element={<AuthRoute />} />
+            <Route path="/host/*" element={<HostRoute />} />
             <Route path="/play/*" element={<PhoneApp />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
