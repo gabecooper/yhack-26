@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { GameState, GamePhase, GameStartOptions } from '@/types/game';
+import type { GameState, GamePhase, GameStartOptions, CustomQuestionPack } from '@/types/game';
 
 export interface GameActions {
   createRoom: () => Promise<void>;
@@ -15,6 +15,9 @@ export interface GameActions {
   removePdf: (pdfId: string) => void;
   approvePdf: (pdfId: string) => void;
   rejectPdf: (pdfId: string) => void;
+  upsertCustomPack: (pack: CustomQuestionPack) => void;
+  toggleCustomPack: (packId: string, enabled: boolean) => void;
+  removeCustomPack: (packId: string) => void;
   playAgain: () => void;
   setPhase: (phase: GamePhase) => void;
   advancePhase: () => void;

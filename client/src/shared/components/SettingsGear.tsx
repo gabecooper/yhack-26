@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useAppFlow } from '@/app/AppFlowContext';
 import { useGameActions, useGameState } from '@/context/GameContext';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
 
 interface SettingsGearProps {
   minimal?: boolean;
@@ -20,6 +21,12 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
   const { flow, clearFlow } = useAppFlow();
   const { roomCode } = useGameState();
   const { setPhase } = useGameActions();
+  const {
+    musicEnabled,
+    soundEffectsEnabled,
+    setMusicEnabled,
+    setSoundEffectsEnabled,
+  } = useAudioSettings();
   const isHostRoute = location.pathname.startsWith('/host');
   const hasHostedRoomCode = typeof window !== 'undefined'
     && window.localStorage.getItem('heist_host_room_code') === roomCode;
@@ -105,11 +112,21 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
               <div className="space-y-4 font-ui text-[#1a202c]">
                 <label className="flex items-center justify-between">
                   <span className="text-lg">Sound Effects</span>
-                  <input type="checkbox" defaultChecked className="h-5 w-5 accent-vault-gold" />
+                  <input
+                    type="checkbox"
+                    checked={soundEffectsEnabled}
+                    onChange={event => setSoundEffectsEnabled(event.target.checked)}
+                    className="h-5 w-5 accent-vault-gold"
+                  />
                 </label>
                 <label className="flex items-center justify-between">
                   <span className="text-lg">Music</span>
-                  <input type="checkbox" defaultChecked className="h-5 w-5 accent-vault-gold" />
+                  <input
+                    type="checkbox"
+                    checked={musicEnabled}
+                    onChange={event => setMusicEnabled(event.target.checked)}
+                    className="h-5 w-5 accent-vault-gold"
+                  />
                 </label>
               </div>
               <div className="mt-6 rounded-2xl bg-black/5 px-4 py-3 font-ui">

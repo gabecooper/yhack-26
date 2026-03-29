@@ -1,8 +1,19 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { PlayerReaction } from '../components/PlayerReaction';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
+import {
+  getRandomPresetQuip,
+  getSpecialQuip,
+  type QuipOutcome,
+} from '@/services/resultsQuips';
+import {
+  getNarrationAudioUrl,
+  playNarration,
+  stopNarration,
+} from '@/services/questionNarration';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 function getReactionLayout(playerCount: number) {
@@ -29,24 +40,175 @@ function getReactionLayout(playerCount: number) {
   return { columns: 1, gapPx: 12, scale: 1 };
 }
 
+function pickRandomItem<T>(items: T[]) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return items[Math.floor(Math.random() * items.length)] ?? null;
+}
+
 export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();
   const { advancePhase } = useGameActions();
-
-  if (!currentQuestion || !results) return null;
-
   const activePlayers = players.filter(p => !p.isEliminated);
   const correctPlayers = activePlayers.filter(
-    p => results.playerAnswers[p.id] === results.correctIndex
+    p => results && results.playerAnswers[p.id] === results.correctIndex
   );
   const wrongPlayers = activePlayers.filter(
-    p => results.playerAnswers[p.id] !== results.correctIndex
+    p => results && results.playerAnswers[p.id] !== results.correctIndex
   );
 
-  const correctAnswer = currentQuestion.choices[results.correctIndex];
-  const answerMeta = getAnswerMeta(results.correctIndex);
+  const correctAnswer = currentQuestion && results
+    ? currentQuestion.choices[results.correctIndex]
+    : '';
+  const answerMeta = getAnswerMeta(results?.correctIndex ?? 0);
   const correctLayout = getReactionLayout(correctPlayers.length);
   const wrongLayout = getReactionLayout(wrongPlayers.length);
+  const quipOutcome: QuipOutcome = wrongPlayers.length > 0 ? 'wrong' : 'correct';
+  const quipCandidates = quipOutcome === 'wrong' ? wrongPlayers : correctPlayers;
+  const quipCandidateIds = useMemo(
+    () => quipCandidates.map(player => player.id).join('::'),
+    [quipCandidates]
+  );
+  const [targetQuipPlayerId, setTargetQuipPlayerId] = useState<string | null>(null);
+  const [presetResultsQuip, setPresetResultsQuip] = useState('');
+  const [resultsQuip, setResultsQuip] = useState('');
+  const [isQuipReady, setIsQuipReady] = useState(true);
+  const [shouldFetchSpecialQuip, setShouldFetchSpecialQuip] = useState(false);
+  const resultsEnteredAtRef = useRef(Date.now());
+  const previousResultsQuipRef = useRef<string | null>(null);
+
+  const targetQuipPlayer = useMemo(
+    () => quipCandidates.find(player => player.id === targetQuipPlayerId) ?? null,
+    [quipCandidates, targetQuipPlayerId]
+  );
+
+  useEffect(() => {
+    resultsEnteredAtRef.current = Date.now();
+
+    if (!currentQuestion) {
+      setTargetQuipPlayerId(null);
+      setPresetResultsQuip('');
+      setResultsQuip('');
+      setShouldFetchSpecialQuip(false);
+      setIsQuipReady(false);
+      return;
+    }
+
+    const chosenPlayer = pickRandomItem(quipCandidates);
+
+    if (!chosenPlayer) {
+      setTargetQuipPlayerId(null);
+      setPresetResultsQuip('');
+      setResultsQuip('');
+      setShouldFetchSpecialQuip(false);
+      setIsQuipReady(true);
+      return;
+    }
+
+    const nextQuip = getRandomPresetQuip({
+      playerName: chosenPlayer.name,
+      outcome: quipOutcome,
+      excluding: previousResultsQuipRef.current,
+    });
+    const useSpecialQuip = Math.random() < (1 / 3);
+
+    setTargetQuipPlayerId(chosenPlayer.id);
+    setPresetResultsQuip(nextQuip);
+    setResultsQuip(nextQuip);
+    setShouldFetchSpecialQuip(useSpecialQuip);
+    setIsQuipReady(!useSpecialQuip);
+    previousResultsQuipRef.current = nextQuip;
+  }, [currentQuestion?.id, quipCandidateIds, quipOutcome]);
+
+  useEffect(() => {
+    if (!currentQuestion) {
+      setPresetResultsQuip('');
+      setResultsQuip('');
+      setIsQuipReady(false);
+      return;
+    }
+
+    if (!targetQuipPlayer) {
+      setPresetResultsQuip('');
+      setResultsQuip('');
+      setIsQuipReady(true);
+      return;
+    }
+
+    let isCancelled = false;
+    if (!shouldFetchSpecialQuip) {
+      setResultsQuip(presetResultsQuip);
+      setIsQuipReady(true);
+      return;
+    }
+
+    setIsQuipReady(false);
+
+    void getSpecialQuip({
+      questionId: currentQuestion.id,
+      playerName: targetQuipPlayer.name,
+      outcome: quipOutcome,
+      category: currentQuestion.category,
+      question: currentQuestion.question,
+      correctAnswer,
+    }).then(quip => {
+      if (!isCancelled) {
+        setResultsQuip(quip);
+        previousResultsQuipRef.current = quip;
+        setIsQuipReady(true);
+      }
+    }).catch(error => {
+      console.warn('Unable to load special wrong quip', error);
+      if (!isCancelled) {
+        setResultsQuip(presetResultsQuip);
+        previousResultsQuipRef.current = presetResultsQuip;
+        setIsQuipReady(true);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    correctAnswer,
+    currentQuestion,
+    presetResultsQuip,
+    quipOutcome,
+    shouldFetchSpecialQuip,
+    targetQuipPlayer,
+  ]);
+
+  useEffect(() => {
+    if (!currentQuestion || !resultsQuip || !isQuipReady) {
+      return;
+    }
+
+    void getNarrationAudioUrl(`results-quip:${currentQuestion.id}`, resultsQuip).catch(error => {
+      console.warn('Unable to prewarm results narration', error);
+    });
+  }, [currentQuestion, isQuipReady, resultsQuip]);
+
+  useEffect(() => {
+    if (!currentQuestion || !resultsQuip || !isQuipReady) {
+      stopNarration();
+      return;
+    }
+
+    const elapsedMs = Date.now() - resultsEnteredAtRef.current;
+    const delayMs = Math.max(0, 2000 - elapsedMs);
+    const timeoutId = window.setTimeout(() => {
+      void playNarration(`results-quip:${currentQuestion.id}`, resultsQuip);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      stopNarration();
+    };
+  }, [currentQuestion, isQuipReady, resultsQuip]);
+
+  if (!currentQuestion || !results) return null;
 
   return (
     <HostLayout backgroundImage={v4RoofBg} minimalSettingsGear>

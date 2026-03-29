@@ -2,16 +2,30 @@ import { useState, type Dispatch, type SetStateAction } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { CharacterPortraitCard } from '@/shared/components/CharacterPortraitCard';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import { playSelectionDing } from '@/shared/services/selectionDing';
 import { useAppFlow } from '@/app/AppFlowContext';
 import { POLYMARKET_CATEGORIES, getPolymarketCategoryName } from '@/services/polymarket/categories';
+import { MiscPackManager } from '../components/MiscPackManager';
 import { PdfManager } from '../components/PdfManager';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
+import type { FriendGroupPackSettings } from '@/types/game';
 
 const FRIEND_GROUP_PACKS = [
   'Inside jokes',
   'Who said it?',
   'Campus lore',
+];
+
+const FRIEND_GROUP_PACK_STYLES: Array<{
+  id: FriendGroupPackSettings['style'];
+  label: string;
+  emoji: string;
+}> = [
+  { id: 'funny', label: 'Outta Pocket', emoji: '😂' },
+  { id: 'kid-friendly', label: 'Get to Know Ya', emoji: '🧒' },
+  { id: 'for-family', label: 'With Your Mom', emoji: '👨‍👩‍👧' },
 ];
 
 type ScrapSectionId = 'polymarket' | 'coursework' | 'friends' | 'misc';
@@ -25,26 +39,56 @@ const INITIAL_OPEN_SCRAP_SECTIONS: Record<ScrapSectionId, boolean> = {
 };
 
 export function RoomView() {
-  const { roomCode, players, pdfs, isPreparingGame } = useGameState();
+  const { roomCode, players, customPacks, isPreparingGame } = useGameState();
   const { startGame, simulateDevPlayerJoin } = useGameActions();
+  const { soundEffectsEnabled } = useAudioSettings();
   const { flow } = useAppFlow();
   const [openScrapSections, setOpenScrapSections] = useState(INITIAL_OPEN_SCRAP_SECTIONS);
   const [selectedPolymarket, setSelectedPolymarket] = useState<string[]>([]);
   const [selectedFriendPacks, setSelectedFriendPacks] = useState<string[]>([]);
+  const [isFriendGroupCustomEnabled, setIsFriendGroupCustomEnabled] = useState(false);
+  const [friendGroupPackSettings, setFriendGroupPackSettings] = useState<FriendGroupPackSettings>({
+    numQuestions: GAME_CONFIG.defaultQuestionCount,
+    style: 'funny',
+    includeNames: false,
+  });
   const isDevMode = flow === 'dev';
 
   const hasPlayers = players.length >= GAME_CONFIG.minPlayers;
-  const hasReadyPdfs = pdfs.some(p => p.status === 'ready' && p.enabled);
   const hasLivePolymarketSelections = selectedPolymarket.length > 0;
-  const canStart = hasPlayers && (hasReadyPdfs || hasLivePolymarketSelections) && !isPreparingGame;
-  const selectedCoursework = pdfs
-    .filter(pdf => pdf.enabled)
-    .map(pdf => getCourseworkDisplayName(pdf.filename));
-  const selectedMaterials = [
-    ...selectedPolymarket.map(getPolymarketCategoryName),
-    ...selectedCoursework,
-    ...selectedFriendPacks,
-  ];
+  const courseworkPacks = customPacks.filter(pack => pack.sourceType === 'transcript');
+  const miscPacks = customPacks.filter(pack => pack.sourceType !== 'transcript');
+  const selectedCourseworkPacks = courseworkPacks.filter(pack => pack.enabled);
+  const selectedMiscPacks = miscPacks.filter(pack => pack.enabled);
+  const selectedCustomPacks = [...selectedCourseworkPacks, ...selectedMiscPacks];
+  const selectedCustomQuestions = selectedCustomPacks.flatMap(pack => pack.questions);
+  const hasCustomPackSelections = selectedCustomQuestions.length > 0;
+  const isFriendGroupMode = isFriendGroupCustomEnabled;
+  const hasValidFriendGroupSettings =
+    friendGroupPackSettings.numQuestions >= 3
+    && friendGroupPackSettings.numQuestions <= 15
+    && Boolean(friendGroupPackSettings.style);
+  const canStart =
+    isFriendGroupMode
+      ? hasPlayers && hasValidFriendGroupSettings && !isPreparingGame
+      : hasPlayers
+        && (hasLivePolymarketSelections || hasCustomPackSelections)
+        && !isPreparingGame;
+  const selectedCoursework = selectedCourseworkPacks.map(pack => getCourseworkDisplayName(pack.filename));
+  const friendGroupStyleLabel =
+    FRIEND_GROUP_PACK_STYLES.find(style => style.id === friendGroupPackSettings.style)?.label
+    ?? friendGroupPackSettings.style;
+  const selectedMaterials = isFriendGroupMode
+    ? [
+      ...selectedFriendPacks,
+      `Friend Pack · ${friendGroupStyleLabel} · ${friendGroupPackSettings.numQuestions} Q`,
+    ]
+    : [
+      ...selectedPolymarket.map(getPolymarketCategoryName),
+      ...selectedCoursework,
+      ...selectedFriendPacks,
+      ...selectedMiscPacks.map(pack => getCourseworkDisplayName(pack.filename)),
+    ];
   const playerSlots = Array.from({ length: GAME_CONFIG.maxPlayers }, (_unused, slotIndex) => {
     const player = players.find(candidate => candidate.characterIndex === slotIndex) ?? null;
 
@@ -57,10 +101,15 @@ export function RoomView() {
 
   const toggleSelection = (
     value: string,
+    isSelected: boolean,
     setSelected: Dispatch<SetStateAction<string[]>>
   ) => {
+    if (soundEffectsEnabled) {
+      playSelectionDing();
+    }
+
     setSelected(current =>
-      current.includes(value)
+      isSelected
         ? current.filter(item => item !== value)
         : [...current, value]
     );
@@ -137,7 +186,7 @@ export function RoomView() {
                       Polymarket
                     </h3>
                     <p className="mt-1 font-ui text-sm text-gray-400">
-                      Build from live market categories.
+                      Test your wits against live market categories.
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
@@ -148,21 +197,25 @@ export function RoomView() {
                 {openScrapSections.polymarket && (
                   <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     <div className="grid grid-cols-2 gap-2">
-                      {POLYMARKET_CATEGORIES.map(category => (
-                        <button
-                          key={category.tag}
-                          type="button"
-                          onClick={() => toggleSelection(category.tag, setSelectedPolymarket)}
-                          className={`rounded-full border px-3 py-2 text-left font-ui text-sm transition-colors ${
-                            selectedPolymarket.includes(category.tag)
-                              ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
-                              : 'border-white/15 text-white hover:border-white/35 hover:bg-white/5'
-                          }`}
-                        >
-                          <span className="mr-2">{category.emoji}</span>
-                          {category.name}
-                        </button>
-                      ))}
+                      {POLYMARKET_CATEGORIES.map(category => {
+                        const isSelected = selectedPolymarket.includes(category.tag);
+
+                        return (
+                          <button
+                            key={category.tag}
+                            type="button"
+                            onClick={() => toggleSelection(category.tag, isSelected, setSelectedPolymarket)}
+                            className={`rounded-full border px-3 py-2 text-left font-ui text-sm transition-colors ${
+                              isSelected
+                                ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
+                                : 'border-white/15 text-white hover:border-white/35 hover:bg-white/5'
+                            }`}
+                          >
+                            <span className="mr-2">{category.emoji}</span>
+                            {category.name}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -179,7 +232,7 @@ export function RoomView() {
                       Coursework
                     </h3>
                     <p className="mt-1 font-ui text-sm text-gray-400">
-                      Turn notes and slides into prompts.
+                      Study with R.A.C.O.O.N. to steal the show!
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
@@ -189,7 +242,7 @@ export function RoomView() {
 
                 {openScrapSections.coursework && (
                   <div className="border-t border-white/10 px-4 py-4">
-                    <PdfManager pdfs={pdfs} />
+                    <PdfManager packs={courseworkPacks} />
                   </div>
                 )}
               </section>
@@ -216,28 +269,124 @@ export function RoomView() {
                 {openScrapSections.friends && (
                   <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     <div className="flex flex-wrap gap-2">
-                      {FRIEND_GROUP_PACKS.map(pack => (
-                        <button
-                          key={pack}
-                          type="button"
-                          onClick={() => toggleSelection(pack, setSelectedFriendPacks)}
-                          className={`rounded-full border px-3 py-2 font-ui text-sm transition-colors ${
-                            selectedFriendPacks.includes(pack)
-                              ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
-                              : 'border-white/15 text-white/85 hover:border-white/35 hover:bg-white/5'
-                          }`}
-                        >
-                          {pack}
-                        </button>
-                      ))}
+                      {FRIEND_GROUP_PACKS.map(pack => {
+                        const isSelected = selectedFriendPacks.includes(pack);
+
+                        return (
+                          <button
+                            key={pack}
+                            type="button"
+                            onClick={() => toggleSelection(pack, isSelected, setSelectedFriendPacks)}
+                            className={`max-w-full whitespace-normal break-words rounded-full border px-3 py-2 text-center font-ui text-sm transition-colors ${
+                              isSelected
+                                ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
+                                : 'border-white/15 text-white/85 hover:border-white/35 hover:bg-white/5'
+                            }`}
+                          >
+                            {pack}
+                          </button>
+                        );
+                      })}
                     </div>
                     <button
                       type="button"
-                      disabled
-                      className="rounded-full border border-dashed border-white/25 px-4 py-2 font-ui text-sm text-gray-300 transition-colors hover:border-white/45 hover:text-white"
+                      onClick={() => {
+                        if (soundEffectsEnabled) {
+                          playSelectionDing();
+                        }
+
+                        setIsFriendGroupCustomEnabled(current => !current);
+                      }}
+                      className={`max-w-full whitespace-normal break-words rounded-full border px-4 py-2 text-center font-ui text-sm transition-colors ${
+                        isFriendGroupMode
+                          ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
+                          : 'border-dashed border-white/25 text-gray-300 hover:border-white/45 hover:text-white'
+                      }`}
                     >
-                      Custom packs soon
+                      {isFriendGroupMode ? 'Hide custom friend pack' : 'Build custom friend pack'}
                     </button>
+
+                    {isFriendGroupMode && (
+                      <div className="w-full rounded-2xl border border-[#f59e0b]/20 bg-[#f59e0b]/8 p-4">
+                        <div className="mb-3 font-ui text-sm font-bold uppercase tracking-[0.2em] text-[#f3c77a]">
+                          Friend Group Custom Pack
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="mb-2 block font-ui text-xs font-semibold uppercase tracking-[0.2em] text-vault-gold/80">
+                            Number of Questions: {friendGroupPackSettings.numQuestions}
+                          </label>
+                          <input
+                            type="range"
+                            min={3}
+                            max={15}
+                            step={1}
+                            value={friendGroupPackSettings.numQuestions}
+                            onChange={event => {
+                              setFriendGroupPackSettings(previous => ({
+                                ...previous,
+                                numQuestions: Number(event.target.value),
+                              }));
+                            }}
+                            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-white/15 accent-vault-gold"
+                          />
+                          <div className="mt-1 flex justify-between font-ui text-[11px] uppercase tracking-[0.2em] text-white/50">
+                            <span>3</span>
+                            <span>15</span>
+                          </div>
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="mb-2 block font-ui text-xs font-semibold uppercase tracking-[0.2em] text-vault-gold/80">
+                            Style / Audience
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {FRIEND_GROUP_PACK_STYLES.map(style => (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => {
+                                  setFriendGroupPackSettings(previous => ({
+                                    ...previous,
+                                    style: style.id,
+                                  }));
+                                }}
+                                className={`max-w-full whitespace-normal break-words rounded-full border px-3 py-2 text-center font-ui text-sm transition-colors ${
+                                  friendGroupPackSettings.style === style.id
+                                    ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
+                                    : 'border-white/20 bg-white/5 text-white/85 hover:border-white/40 hover:bg-white/10'
+                                }`}
+                              >
+                                {style.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mb-4 flex items-center justify-between">
+                          <div className="font-ui text-sm font-semibold text-vault-gold/80">Include player names</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFriendGroupPackSettings(previous => ({
+                                ...previous,
+                                includeNames: !previous.includeNames,
+                              }));
+                            }}
+                            className={`relative h-6 w-11 rounded-full transition-colors ${
+                              friendGroupPackSettings.includeNames ? 'bg-vault-gold' : 'bg-white/25'
+                            }`}
+                            aria-label="Toggle include player names"
+                          >
+                            <span
+                              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${
+                                friendGroupPackSettings.includeNames ? 'left-[22px]' : 'left-0.5'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -253,7 +402,7 @@ export function RoomView() {
                       Misc Scraps
                     </h3>
                     <p className="mt-1 font-ui text-sm text-gray-400">
-                      More oddball source packs are on the way.
+                      Our expert R.A.C.O.O.Ns will sift transform your scraps to find treasure.
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
@@ -263,13 +412,7 @@ export function RoomView() {
 
                 {openScrapSections.misc && (
                   <div className="border-t border-white/10 px-4 py-4">
-                    <button
-                      type="button"
-                      disabled
-                      className="rounded-full border border-white/15 px-3 py-2 font-ui text-sm text-white/85"
-                    >
-                      Coming soon
-                    </button>
+                    <MiscPackManager packs={miscPacks} />
                   </div>
                 )}
               </section>
@@ -329,14 +472,32 @@ export function RoomView() {
         >
           <button
             onClick={() => {
-              void startGame({ polymarketCategories: selectedPolymarket });
+              if (isFriendGroupMode) {
+                void startGame({
+                  friendGroupPack: friendGroupPackSettings,
+                  playerNames: players.map(player => player.name).filter(Boolean),
+                  playerIds: players.map(player => player.id).filter(Boolean),
+                });
+                return;
+              }
+
+              void startGame({
+                polymarketCategories: selectedPolymarket,
+                customQuestions: selectedCustomQuestions,
+              });
             }}
             disabled={!canStart}
             className={`vault-button px-16 py-4 text-2xl transition-opacity ${
               canStart ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
             }`}
           >
-            {isPreparingGame ? 'Loading...' : 'Start'}
+            {isPreparingGame
+              ? isFriendGroupMode
+                ? 'Generating...'
+                : 'Loading...'
+              : isFriendGroupMode
+                ? 'Create Friend Pack'
+                : 'Start'}
           </button>
         </motion.div>
       </div>

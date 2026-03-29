@@ -4,6 +4,7 @@ export type GamePhase =
   | 'home'
   | 'room'
   | 'intro'
+  | 'profile'
   | 'question'
   | 'results'
   | 'leaderboard'
@@ -21,12 +22,54 @@ export interface Question {
   probabilities?: number[];
 }
 
+export type CustomPackSourceType =
+  | 'transcript'
+  | 'enemies'
+  | 'trash'
+  | 'viruses'
+  | 'other';
+
+export type FriendGroupPackStyle =
+  | 'funny'
+  | 'kid-friendly'
+  | 'for-friends'
+  | 'for-family';
+
+export interface FriendGroupPackSettings {
+  numQuestions: number;
+  style: FriendGroupPackStyle;
+  includeNames: boolean;
+}
+
+export interface CustomQuestionPack {
+  id: string;
+  filename: string;
+  label: string;
+  sourceType: CustomPackSourceType;
+  sourceKind: 'pdf' | 'txt';
+  questions: Question[];
+  questionCount: number;
+  enabled: boolean;
+  createdAt: string | null;
+}
+
 export interface GameStartOptions {
   polymarketCategories?: string[];
+  customQuestions?: Question[];
+  friendGroupPack?: FriendGroupPackSettings | null;
+  playerNames?: string[];
+  playerIds?: string[];
 }
 
 export interface QuestionResult {
   correctIndex: number;
+  playerAnswers: Record<string, number | null>;
+}
+
+export interface CustomResponseHistoryItem {
+  questionId: string;
+  question: string;
+  choices: string[];
   playerAnswers: Record<string, number | null>;
 }
 
@@ -60,6 +103,8 @@ export interface GameState {
   phase: GamePhase;
   players: PlayerState[];
   questionDeck: Question[];
+  profileAssignments: Record<string, Question[]>;
+  profileResponses: Record<string, number[]>;
   currentQuestion: Question | null;
   questionIndex: number;
   totalQuestions: number;
@@ -71,6 +116,8 @@ export interface GameState {
   vaultRun: VaultRunState | null;
   winnerId: string | null;
   pdfs: PdfEntry[];
+  customPacks: CustomQuestionPack[];
   isPreparingGame: boolean;
   preparationMessage: string | null;
+  customResponseHistory: CustomResponseHistoryItem[];
 }

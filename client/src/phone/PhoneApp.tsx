@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { JoinView } from './views/JoinView';
 import { WaitingView } from './views/WaitingView';
+import { ProfilePhoneView } from './views/ProfilePhoneView';
 import { QuestionPhoneView } from './views/QuestionPhoneView';
 import { ResultsPhoneView } from './views/ResultsPhoneView';
 import { SpectatorView } from './views/SpectatorView';
@@ -53,6 +54,8 @@ export function PhoneApp() {
             <SpectatorView player={player} />
           ) : phase === 'room' || phase === 'home' || phase === 'intro' ? (
             <WaitingView player={player} onLeave={handleLeave} />
+          ) : phase === 'profile' ? (
+            <ProfilePhoneView playerId={playerId} />
           ) : phase === 'question' ? (
             <QuestionPhoneView playerId={playerId} />
           ) : phase === 'results' ? (

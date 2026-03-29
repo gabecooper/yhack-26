@@ -103,6 +103,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
           <button
             type="submit"
             disabled={!canJoin}
+            data-button-click-sound="accent"
             className="minimal-button-primary mt-2 w-full py-4 text-lg"
           >
             {isJoining ? 'Searching...' : 'Join Room'}

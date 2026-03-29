@@ -8,10 +8,21 @@ import {
 } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { GameContext, type GameActions } from './GameContext';
-import type { GamePhase, GameStartOptions, GameState, QuestionResult } from '@/types/game';
+import type {
+  CustomResponseHistoryItem,
+  CustomQuestionPack,
+  FriendGroupPackStyle,
+  GamePhase,
+  GameStartOptions,
+  GameState,
+  Question,
+  QuestionResult,
+} from '@/types/game';
 import type { PlayerState } from '@/types/player';
 import { GAME_CONFIG } from '@/constants/gameConfig';
 import { fetchPolymarketQuestionDeck } from '@/services/polymarket/questions';
+import { listCustomQuestionPacks } from '@/services/customQuestionPacks';
+import { fetchFriendGroupCustomPackQuestions } from '@/services/friendGroupCustomPack';
 import { supabase } from '@/services/supabaseClient';
 import { useAuth } from '@/auth/AuthContext';
 import {
@@ -30,6 +41,13 @@ const SNAPSHOT_PREFIX = 'heist_host_snapshot:';
 const JOIN_REQUEST_TIMEOUT_MS = 4000;
 const HOST_ROOM_CLAIM_RETRIES = 12;
 const HOST_ROOM_CONFLICT_ERROR = 'HOST_ROOM_CONFLICT';
+const CUSTOM_PROFILE_QUESTION_COUNT = 3;
+const FRIEND_GROUP_PACK_STYLES = new Set<FriendGroupPackStyle>([
+  'kid-friendly',
+  'for-friends',
+  'for-family',
+  'funny',
+]);
 
 interface JoinRequestPayload {
   roomCode: string;
@@ -52,6 +70,15 @@ interface PresencePayload {
 }
 
 type StateUpdater = GameState | ((previousState: GameState) => GameState);
+
+function pickRandomItem<T>(items: T[]) {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const randomIndex = Math.floor(Math.random() * items.length);
+  return items[randomIndex];
+}
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -167,6 +194,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
     void broadcastSnapshot(nextSnapshot, reason);
   }, [broadcastSnapshot, setLocalState]);
 
+  const updateResourceState = useCallback((updater: StateUpdater, reason: string) => {
+    if (isHostRef.current && stateRef.current.roomCode) {
+      commitHostState(updater, reason);
+      return;
+    }
+
+    setLocalState(updater);
+  }, [commitHostState, setLocalState]);
+
   const finalizeQuestionRound = useCallback((reason: string) => {
     if (!isHostRef.current || isFinalizingQuestionRef.current) {
       return;
@@ -175,8 +211,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     isFinalizingQuestionRef.current = true;
 
     try {
-      const nextState = createResultsPhaseState(stateRef.current);
-      commitHostState(nextState, `results:${reason}`);
+      const currentState = stateRef.current;
+
+      if (currentState.phase === 'profile') {
+        void persistFriendGroupProfileAnswers(
+          currentState.profileAssignments,
+          currentState.profileResponses,
+          currentState.players
+        );
+        commitHostState(createAfterProfilePhaseState(currentState), `profile:${reason}`);
+      } else {
+        commitHostState(createResultsPhaseState(currentState), `results:${reason}`);
+      }
     } finally {
       window.setTimeout(() => {
         isFinalizingQuestionRef.current = false;
@@ -223,7 +269,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     setLocalState(nextState);
-  }, [setLocalState]);
+    void broadcastSnapshot(nextState, 'presence-sync');
+  }, [broadcastSnapshot, setLocalState]);
 
   const handleJoinRequest = useCallback((payload: JoinRequestPayload) => {
     if (!isHostRef.current || payload.roomCode !== stateRef.current.roomCode) {
@@ -253,10 +300,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       ));
     } else {
       const usedIndices = new Set(currentState.players.map(player => player.characterIndex));
-      const characterIndex = Array.from(
+      const availableCharacterIndices = Array.from(
         { length: GAME_CONFIG.maxPlayers },
         (_unused, index) => index
-      ).find(index => !usedIndices.has(index)) ?? 0;
+      ).filter(index => !usedIndices.has(index));
+      const characterIndex = pickRandomItem(availableCharacterIndices) ?? 0;
 
       nextPlayers = [
         ...currentState.players,
@@ -289,7 +337,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const currentState = stateRef.current;
 
-    if (currentState.phase !== 'question') {
+    if (currentState.phase !== 'question' && currentState.phase !== 'profile') {
+      return;
+    }
+
+    if (currentState.phase === 'profile') {
+      const assignedQuestions = currentState.profileAssignments[payload.playerId] ?? [];
+      const existingResponses = currentState.profileResponses[payload.playerId] ?? [];
+
+      if (existingResponses.length >= assignedQuestions.length) {
+        return;
+      }
+
+      const nextState = {
+        ...currentState,
+        profileResponses: {
+          ...currentState.profileResponses,
+          [payload.playerId]: [...existingResponses, payload.answerIndex],
+        },
+      };
+
+      setLocalState(nextState);
+      void broadcastSnapshot(nextState, 'submit-answer');
       return;
     }
 
@@ -316,7 +385,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     setLocalState(nextState);
-  }, [setLocalState]);
+    void broadcastSnapshot(nextState, 'submit-answer');
+  }, [broadcastSnapshot, setLocalState]);
 
   const handleLeaveMessage = useCallback((payload: LeaveRoomPayload) => {
     if (!isHostRef.current) {
@@ -540,21 +610,59 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [subscribeToRoom, user]);
 
   useEffect(() => {
-    if (!isHostRef.current || state.phase !== 'question') {
+    if (!user || !supabase) {
+      setLocalState(previousState => ({
+        ...previousState,
+        customPacks: [],
+      }));
+      return;
+    }
+
+    let isActive = true;
+
+    void listCustomQuestionPacks(user.id)
+      .then(packs => {
+        if (!isActive) {
+          return;
+        }
+
+        setLocalState(previousState => ({
+          ...previousState,
+          customPacks: resetCustomPackSelections(packs),
+        }));
+      })
+      .catch(error => {
+        console.error('Unable to load custom question packs', error);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [user, setLocalState]);
+
+  useEffect(() => {
+    if (!isHostRef.current || (state.phase !== 'question' && state.phase !== 'profile')) {
       return;
     }
 
     const activePlayers = state.players.filter(player => !player.isEliminated);
     const everyoneAnswered =
-      activePlayers.length > 0
-      && activePlayers.every(player => player.currentAnswer !== null);
+      state.phase === 'profile'
+        ? activePlayers.length > 0
+          && activePlayers.every(player => {
+            const assignedQuestions = state.profileAssignments[player.id] ?? [];
+            const answers = state.profileResponses[player.id] ?? [];
+            return assignedQuestions.length > 0 && answers.length >= assignedQuestions.length;
+          })
+        : activePlayers.length > 0
+          && activePlayers.every(player => player.currentAnswer !== null);
 
     if (everyoneAnswered) {
       finalizeQuestionRound('all-answered');
       return;
     }
 
-    if (!state.roundDeadlineAt) {
+    if (state.phase === 'profile' || !state.roundDeadlineAt) {
       return;
     }
 
@@ -564,7 +672,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, timeoutMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [finalizeQuestionRound, state.phase, state.players, state.roundDeadlineAt]);
+  }, [
+    finalizeQuestionRound,
+    state.phase,
+    state.players,
+    state.profileAssignments,
+    state.profileResponses,
+    state.roundDeadlineAt,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -587,7 +702,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     for (let attempt = 0; attempt < HOST_ROOM_CLAIM_RETRIES; attempt += 1) {
       const roomCode = generateRoomCode();
-      const initialState = createRealtimeRoomState(roomCode);
+      const initialState = {
+        ...createRealtimeRoomState(roomCode),
+        pdfs: resetPdfSelections(stateRef.current.pdfs),
+        customPacks: resetCustomPackSelections(stateRef.current.customPacks),
+      };
 
       try {
         await subscribeToRoom(roomCode, {
@@ -689,7 +808,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       preparationMessage: null,
     }), 'start-game:preparing');
 
-    const { questionDeck, preparationMessage } = await buildQuestionDeck(options);
+    const { questionDeck, preparationMessage, customResponseHistorySeed } = await buildQuestionDeck(options);
     const openingQuestion = questionDeck[0] ?? getMockQuestion(0);
 
     commitHostState(previousState => ({
@@ -703,6 +822,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       timerDuration: GAME_CONFIG.questionTimerSeconds,
       roundDeadlineAt: null,
       results: null,
+      profileAssignments: {},
+      profileResponses: {},
       players: previousState.players.map(player => ({
         ...player,
         score: GAME_CONFIG.startingBalance,
@@ -712,6 +833,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       })),
       isPreparingGame: false,
       preparationMessage,
+      customResponseHistory: customResponseHistorySeed,
     }), 'start-game:ready');
   }, [commitHostState]);
 
@@ -756,14 +878,33 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setLocalState(previousState => ({
-      ...previousState,
-      players: previousState.players.map(player => (
-        player.id === playerId
-          ? { ...player, currentAnswer: answerIndex }
-          : player
-      )),
-    }));
+    setLocalState(previousState => {
+      if (previousState.phase === 'profile') {
+        const assignedQuestions = previousState.profileAssignments[playerId] ?? [];
+        const existingResponses = previousState.profileResponses[playerId] ?? [];
+
+        if (existingResponses.length >= assignedQuestions.length) {
+          return previousState;
+        }
+
+        return {
+          ...previousState,
+          profileResponses: {
+            ...previousState.profileResponses,
+            [playerId]: [...existingResponses, answerIndex],
+          },
+        };
+      }
+
+      return {
+        ...previousState,
+        players: previousState.players.map(player => (
+          player.id === playerId
+            ? { ...player, currentAnswer: answerIndex }
+            : player
+        )),
+      };
+    });
 
     void sendBroadcast('submit-answer', { playerId, answerIndex });
   }, [sendBroadcast, setLocalState]);
@@ -834,6 +975,48 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }), 'pdf-rejected');
   }, [commitHostState]);
 
+  const upsertCustomPack = useCallback((pack: CustomQuestionPack) => {
+    updateResourceState(previousState => {
+      const existingPackIndex = previousState.customPacks.findIndex(
+        existingPack => existingPack.id === pack.id
+      );
+
+      if (existingPackIndex === -1) {
+        return {
+          ...previousState,
+          customPacks: [pack, ...previousState.customPacks],
+        };
+      }
+
+      const nextCustomPacks = [...previousState.customPacks];
+      nextCustomPacks[existingPackIndex] = {
+        ...pack,
+        enabled: pack.enabled ?? nextCustomPacks[existingPackIndex].enabled,
+      };
+
+      return {
+        ...previousState,
+        customPacks: nextCustomPacks,
+      };
+    }, 'custom-pack-upserted');
+  }, [updateResourceState]);
+
+  const toggleCustomPack = useCallback((packId: string, enabled: boolean) => {
+    updateResourceState(previousState => ({
+      ...previousState,
+      customPacks: previousState.customPacks.map(pack => (
+        pack.id === packId ? { ...pack, enabled } : pack
+      )),
+    }), 'custom-pack-toggled');
+  }, [updateResourceState]);
+
+  const removeCustomPack = useCallback((packId: string) => {
+    updateResourceState(previousState => ({
+      ...previousState,
+      customPacks: previousState.customPacks.filter(pack => pack.id !== packId),
+    }), 'custom-pack-removed');
+  }, [updateResourceState]);
+
   const playAgain = useCallback(() => {
     commitHostState(playAgainState(stateRef.current), 'play-again');
   }, [commitHostState]);
@@ -866,9 +1049,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
         commitHostState(getStateForPhase(currentState, 'intro'), 'advance:room');
         break;
       case 'intro':
-        commitHostState(getStateForPhase(currentState, 'question'), 'advance:intro');
+        if (shouldUseProfilePhase(currentState, currentState.questionIndex)) {
+          commitHostState(createProfilePhaseState(currentState, currentState.questionIndex), 'advance:intro-profile');
+        } else {
+          commitHostState(getStateForPhase(currentState, 'question'), 'advance:intro');
+        }
         break;
       case 'question':
+        finalizeQuestionRound('manual-advance');
+        break;
+      case 'profile':
         finalizeQuestionRound('manual-advance');
         break;
       case 'results':
@@ -879,7 +1069,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const deckLength = currentState.questionDeck.length || GAME_CONFIG.defaultQuestionCount;
 
         if (nextIndex < deckLength) {
-          commitHostState(createQuestionPhaseState(currentState, nextIndex), 'advance:leaderboard');
+          const preparedState = maybePrepareFriendGroupFollowUpQuestion(currentState, nextIndex);
+          commitHostState(createQuestionPhaseState(preparedState, nextIndex), 'advance:leaderboard');
         } else {
           commitHostState(getStateForPhase(currentState, 'win'), 'advance:leaderboard-win');
         }
@@ -908,6 +1099,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     removePdf,
     approvePdf,
     rejectPdf,
+    upsertCustomPack,
+    toggleCustomPack,
+    removeCustomPack,
     playAgain,
     setPhase,
     advancePhase,
@@ -925,6 +1119,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     removePdf,
     approvePdf,
     rejectPdf,
+    upsertCustomPack,
+    toggleCustomPack,
+    removeCustomPack,
     playAgain,
     setPhase,
     advancePhase,
@@ -938,48 +1135,184 @@ export function GameProvider({ children }: { children: ReactNode }) {
 }
 
 async function buildQuestionDeck(options: GameStartOptions) {
+  interface IndexedChoice {
+    choice: string;
+    wasCorrect: boolean;
+    sortKey: number;
+  }
+
+  const shuffleQuestionChoices = (question: Question): Question => {
+    const indexedChoices: IndexedChoice[] = question.choices.map((choice, index) => ({
+      choice,
+      wasCorrect: index === question.correct,
+      sortKey: Math.random(),
+    }));
+
+    indexedChoices.sort((left, right) => left.sortKey - right.sortKey);
+
+    return {
+      ...question,
+      choices: indexedChoices.map(entry => entry.choice),
+      correct: indexedChoices.findIndex(entry => entry.wasCorrect),
+    };
+  };
+
+  const shuffleQuestionDeck = (questions: Question[]) =>
+    questions.map(question => shuffleQuestionChoices(question));
+
+  const requestedQuestionCount = options.friendGroupPack?.numQuestions ?? GAME_CONFIG.defaultQuestionCount;
+  const totalQuestionCount = options.friendGroupPack
+    ? requestedQuestionCount + CUSTOM_PROFILE_QUESTION_COUNT
+    : GAME_CONFIG.defaultQuestionCount;
   const fallbackDeck = Array.from(
-    { length: GAME_CONFIG.defaultQuestionCount },
+    { length: totalQuestionCount },
     (_unused, index) => getMockQuestion(index)
   );
+
+  if (options.friendGroupPack) {
+    try {
+      const friendGroupQuestions = await fetchFriendGroupCustomPackQuestions(
+        {
+          ...options.friendGroupPack,
+          numQuestions: totalQuestionCount,
+        },
+        options.playerNames ?? []
+      );
+      const customResponseHistorySeed = await fetchStoredFriendGroupProfileHistory(
+        options.friendGroupPack.style,
+        options.playerIds ?? []
+      );
+
+      return {
+        questionDeck: shuffleQuestionDeck(friendGroupQuestions),
+        preparationMessage: null,
+        customResponseHistorySeed,
+      };
+    } catch (error) {
+      console.error('Unable to build friend-group custom pack deck', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      return {
+        questionDeck: shuffleQuestionDeck(fallbackDeck),
+        preparationMessage: `Friend group custom pack loading failed (${message}). Using the local fallback deck.`,
+        customResponseHistorySeed: [],
+      };
+    }
+  }
+
+  const selectedCustomQuestions = (options.customQuestions ?? []).slice(0, GAME_CONFIG.defaultQuestionCount);
   const selectedCategories = Array.from(
     new Set((options.polymarketCategories ?? []).map(category => category.trim()).filter(Boolean))
   );
 
-  if (selectedCategories.length === 0) {
+  if (selectedCategories.length === 0 && selectedCustomQuestions.length === 0) {
     return {
-      questionDeck: fallbackDeck,
-      preparationMessage: 'No live market categories were selected, so this round uses the local fallback deck.',
+      questionDeck: shuffleQuestionDeck(fallbackDeck),
+      preparationMessage: 'No live market categories or custom packs were selected, so this round uses the local fallback deck.',
+      customResponseHistorySeed: [],
     };
   }
 
+  let liveQuestions = [] as typeof fallbackDeck;
+
   try {
-    const liveQuestions = await fetchPolymarketQuestionDeck(
-      selectedCategories,
-      GAME_CONFIG.defaultQuestionCount
-    );
-
-    if (liveQuestions.length >= GAME_CONFIG.minQuestionCount) {
-      return {
-        questionDeck: liveQuestions,
-        preparationMessage: null,
-      };
-    }
-
-    if (liveQuestions.length > 0) {
-      return {
-        questionDeck: [...liveQuestions, ...fallbackDeck].slice(0, GAME_CONFIG.defaultQuestionCount),
-        preparationMessage: 'Live markets were limited, so the remaining slots were filled with local fallback questions.',
-      };
+    if (selectedCategories.length > 0) {
+      liveQuestions = await fetchPolymarketQuestionDeck(
+        selectedCategories,
+        GAME_CONFIG.defaultQuestionCount
+      );
     }
   } catch (error) {
     console.error('Unable to build Polymarket-backed deck', error);
   }
 
+  const combinedDeck = [...selectedCustomQuestions, ...liveQuestions].slice(0, GAME_CONFIG.defaultQuestionCount);
+
+  if (combinedDeck.length >= GAME_CONFIG.minQuestionCount) {
+    return {
+      questionDeck: shuffleQuestionDeck(combinedDeck),
+      preparationMessage: null,
+      customResponseHistorySeed: [],
+    };
+  }
+
+  if (combinedDeck.length > 0) {
+    return {
+      questionDeck: shuffleQuestionDeck(
+        [...combinedDeck, ...fallbackDeck].slice(0, GAME_CONFIG.defaultQuestionCount)
+      ),
+      preparationMessage: 'Selected packs were limited, so the remaining slots were filled with local fallback questions.',
+      customResponseHistorySeed: [],
+    };
+  }
+
   return {
-    questionDeck: fallbackDeck,
-    preparationMessage: 'Polymarket was unavailable, so this round fell back to the local question deck.',
+    questionDeck: shuffleQuestionDeck(fallbackDeck),
+    preparationMessage: 'Selected packs were unavailable, so this round fell back to the local question deck.',
+    customResponseHistorySeed: [],
   };
+}
+
+async function fetchStoredFriendGroupProfileHistory(
+  style: FriendGroupPackStyle,
+  playerIds: string[]
+) {
+  if (!supabase || playerIds.length === 0) {
+    return [] as CustomResponseHistoryItem[];
+  }
+
+  const { data, error } = await supabase
+    .from('player_custom_profiles')
+    .select('player_id, question_id, question_text, answer_text, answered_at')
+    .eq('style', style)
+    .in('player_id', playerIds)
+    .order('answered_at', { ascending: false })
+    .limit(300);
+
+  if (error || !Array.isArray(data)) {
+    if (error) {
+      console.error('Unable to load stored friend-group profile history', error);
+    }
+
+    return [] as CustomResponseHistoryItem[];
+  }
+
+  const groupedHistory = new Map<string, CustomResponseHistoryItem>();
+
+  for (const row of data) {
+    const questionId = String(row.question_id ?? '').trim();
+    const question = String(row.question_text ?? '').trim();
+    const playerId = String(row.player_id ?? '').trim();
+    const answerText = String(row.answer_text ?? '').trim();
+
+    if (!questionId || !question || !playerId || !answerText) {
+      continue;
+    }
+
+    const mapKey = `${questionId}::${question}`;
+    const existingEntry = groupedHistory.get(mapKey) ?? {
+      questionId: `stored-${questionId}`,
+      question,
+      choices: [],
+      playerAnswers: {},
+    };
+
+    let answerIndex = existingEntry.choices.indexOf(answerText);
+
+    if (answerIndex === -1 && existingEntry.choices.length < 4) {
+      existingEntry.choices.push(answerText);
+      answerIndex = existingEntry.choices.length - 1;
+    }
+
+    if (answerIndex === -1) {
+      answerIndex = 0;
+    }
+
+    existingEntry.playerAnswers[playerId] = answerIndex;
+    groupedHistory.set(mapKey, existingEntry);
+  }
+
+  return Array.from(groupedHistory.values()).filter(entry => entry.choices.length > 0);
 }
 
 function createRealtimeRoomState(roomCode: string): GameState {
@@ -995,6 +1328,7 @@ function getStateForPhase(previousState: GameState, phase: GamePhase): GameState
     case 'home':
       return {
         ...createInitialState(),
+        customPacks: resetCustomPackSelections(previousState.customPacks),
       };
     case 'room':
       return {
@@ -1009,6 +1343,8 @@ function getStateForPhase(previousState: GameState, phase: GamePhase): GameState
         timeRemaining: GAME_CONFIG.questionTimerSeconds,
         timerDuration: GAME_CONFIG.questionTimerSeconds,
       };
+    case 'profile':
+      return createProfilePhaseState(previousState, previousState.questionIndex);
     case 'question':
       return createQuestionPhaseState(previousState, previousState.questionIndex);
     case 'results':
@@ -1049,6 +1385,8 @@ function createQuestionPhaseState(previousState: GameState, questionIndex: numbe
   return {
     ...previousState,
     phase: 'question',
+    profileAssignments: {},
+    profileResponses: {},
     currentQuestion: question,
     questionIndex: boundedIndex,
     totalQuestions: previousState.questionDeck.length || previousState.totalQuestions,
@@ -1070,6 +1408,7 @@ function createResultsPhaseState(previousState: GameState): GameState {
     ?? previousState.questionDeck[previousState.questionIndex]
     ?? getMockQuestion(previousState.questionIndex);
   const results = buildQuestionResults(previousState.players, currentQuestion.correct);
+  const nextHistory = appendFriendGroupResponseHistory(previousState, currentQuestion, results);
 
   return {
     ...previousState,
@@ -1083,7 +1422,349 @@ function createResultsPhaseState(previousState: GameState): GameState {
         ? { ...player, score: player.score + GAME_CONFIG.correctAnswerReward }
         : player
     )),
+    customResponseHistory: nextHistory,
   };
+}
+
+function createProfilePhaseState(previousState: GameState, questionIndex: number): GameState {
+  const deckLength = previousState.questionDeck.length || GAME_CONFIG.defaultQuestionCount;
+  const boundedIndex = Math.max(0, Math.min(questionIndex, deckLength - 1));
+  const profileAssignments =
+    Object.keys(previousState.profileAssignments).length > 0
+      ? previousState.profileAssignments
+      : buildProfileAssignments(previousState, boundedIndex);
+  const firstAssignedQuestion = Object.values(profileAssignments)[0]?.[0];
+  const currentQuestion = firstAssignedQuestion
+    ?? previousState.questionDeck[boundedIndex]
+    ?? getMockQuestion(boundedIndex);
+
+  return {
+    ...previousState,
+    phase: 'profile',
+    profileAssignments,
+    profileResponses: previousState.profileResponses ?? {},
+    currentQuestion,
+    questionIndex: boundedIndex,
+    totalQuestions: previousState.questionDeck.length || previousState.totalQuestions,
+    timeRemaining: GAME_CONFIG.questionTimerSeconds,
+    timerDuration: GAME_CONFIG.questionTimerSeconds,
+    roundDeadlineAt: null,
+    results: null,
+    players: resetPlayerAnswers(previousState.players),
+  };
+}
+
+function createAfterProfilePhaseState(previousState: GameState): GameState {
+  const nextHistory = appendProfileAssignmentsHistory(previousState);
+  const deckLength = previousState.questionDeck.length || GAME_CONFIG.defaultQuestionCount;
+  const nextIndex = Math.min(CUSTOM_PROFILE_QUESTION_COUNT, deckLength);
+
+  if (nextIndex >= deckLength || deckLength === 0) {
+    return getStateForPhase(
+      {
+        ...previousState,
+        profileAssignments: {},
+        profileResponses: {},
+        customResponseHistory: nextHistory,
+      },
+      'win'
+    );
+  }
+
+  return createQuestionPhaseState(
+    {
+      ...previousState,
+      profileAssignments: {},
+      profileResponses: {},
+      customResponseHistory: nextHistory,
+    },
+    nextIndex
+  );
+}
+
+function appendFriendGroupResponseHistory(
+  previousState: GameState,
+  currentQuestion: Question,
+  results: QuestionResult
+) {
+  if (!isFriendGroupCustomQuestion(currentQuestion)) {
+    return previousState.customResponseHistory;
+  }
+
+  if (previousState.customResponseHistory.some(entry => entry.questionId === currentQuestion.id)) {
+    return previousState.customResponseHistory;
+  }
+
+  const historyItem: CustomResponseHistoryItem = {
+    questionId: currentQuestion.id,
+    question: currentQuestion.question,
+    choices: currentQuestion.choices,
+    playerAnswers: results.playerAnswers,
+  };
+
+  return [...previousState.customResponseHistory, historyItem];
+}
+
+function shouldUseProfilePhase(state: GameState, questionIndex: number) {
+  if (questionIndex >= CUSTOM_PROFILE_QUESTION_COUNT) {
+    return false;
+  }
+
+  const question = state.questionDeck[questionIndex];
+  return isFriendGroupCustomQuestion(question);
+}
+
+function isFriendGroupCustomQuestion(question: Question | null | undefined) {
+  if (!question) {
+    return false;
+  }
+
+  return question.keywords.includes('friend-group-pack');
+}
+
+function buildProfileAssignments(state: GameState, questionIndex: number) {
+  const activePlayers = state.players.filter(player => !player.isEliminated);
+
+  if (activePlayers.length === 0) {
+    return {} as Record<string, Question[]>;
+  }
+
+  const sourceQuestions = state.questionDeck.filter(question =>
+    isFriendGroupCustomQuestion(question) && !question.keywords.includes('friend-group-follow-up')
+  );
+
+  if (sourceQuestions.length === 0) {
+    return {} as Record<string, Question[]>;
+  }
+
+  const startIndex = questionIndex * activePlayers.length;
+  const assignments: Record<string, Question[]> = {};
+
+  activePlayers.forEach((player, playerIndex) => {
+    const otherPlayerNames = state.players
+      .filter(candidate => candidate.id !== player.id)
+      .map(candidate => candidate.name)
+      .filter(Boolean);
+
+    assignments[player.id] = Array.from({ length: CUSTOM_PROFILE_QUESTION_COUNT }, (_unused, slotIndex) => {
+      const template = sourceQuestions[
+        (startIndex + playerIndex + slotIndex * activePlayers.length) % sourceQuestions.length
+      ];
+
+      return personalizeProfileQuestionForPlayer(template, player.name, otherPlayerNames);
+    });
+  });
+
+  return assignments;
+}
+
+function personalizeProfileQuestionForPlayer(
+  question: Question,
+  playerName: string,
+  otherPlayerNames: string[]
+) {
+  const otherPlayerName = otherPlayerNames[0] ?? 'someone in your group';
+
+  return {
+    ...question,
+    question: applyProfileTemplate(question.question, playerName, otherPlayerName),
+    choices: question.choices.map(choice => applyProfileTemplate(choice, playerName, otherPlayerName)),
+  };
+}
+
+function applyProfileTemplate(text: string, playerName: string, otherPlayerName: string) {
+  return text
+    .split('{player}').join(playerName)
+    .split('{other}').join(otherPlayerName);
+}
+
+function appendProfileAssignmentsHistory(previousState: GameState) {
+  const nextByQuestionId = new Map<string, CustomResponseHistoryItem>(
+    previousState.customResponseHistory.map(item => [item.questionId, item])
+  );
+
+  previousState.players.forEach(player => {
+    const assignedQuestions = previousState.profileAssignments[player.id] ?? [];
+    const answers = previousState.profileResponses[player.id] ?? [];
+
+    if (assignedQuestions.length === 0 || answers.length === 0) {
+      return;
+    }
+
+    assignedQuestions.slice(0, answers.length).forEach((assignedQuestion, index) => {
+      const existingEntry = nextByQuestionId.get(assignedQuestion.id) ?? {
+        questionId: assignedQuestion.id,
+        question: assignedQuestion.question,
+        choices: assignedQuestion.choices,
+        playerAnswers: {},
+      };
+
+      existingEntry.playerAnswers[player.id] = Number(answers[index]);
+      nextByQuestionId.set(assignedQuestion.id, existingEntry);
+    });
+  });
+
+  return Array.from(nextByQuestionId.values());
+}
+
+function getFriendGroupPackStyleFromQuestion(question: Question) {
+  const styleKeyword = question.keywords.find(keyword => FRIEND_GROUP_PACK_STYLES.has(keyword as FriendGroupPackStyle));
+
+  if (styleKeyword && FRIEND_GROUP_PACK_STYLES.has(styleKeyword as FriendGroupPackStyle)) {
+    return styleKeyword as FriendGroupPackStyle;
+  }
+
+  const category = (question.category ?? '').toLowerCase();
+
+  if (category.includes('kid-friendly')) return 'kid-friendly';
+  if (category.includes('for-friends')) return 'for-friends';
+  if (category.includes('for-family')) return 'for-family';
+  if (category.includes('funny')) return 'funny';
+
+  return null;
+}
+
+async function persistFriendGroupProfileAnswers(
+  profileAssignments: Record<string, Question[]>,
+  profileResponses: Record<string, number[]>,
+  players: PlayerState[]
+) {
+  if (!supabase) {
+    return;
+  }
+
+  const rows = players
+    .filter(player =>
+      profileAssignments[player.id] !== undefined
+      && Array.isArray(profileResponses[player.id])
+      && profileResponses[player.id].length > 0
+    )
+    .flatMap(player => {
+      const assignedQuestions = profileAssignments[player.id] ?? [];
+      const answers = profileResponses[player.id] ?? [];
+
+      return assignedQuestions.slice(0, answers.length).map((question, index) => {
+        const style = getFriendGroupPackStyleFromQuestion(question);
+
+        if (!style) {
+          return null;
+        }
+
+        const answerIndex = Number(answers[index]);
+        return {
+          player_id: player.id,
+          player_name: player.name,
+          style,
+          question_id: question.id,
+          question_text: question.question,
+          answer_index: answerIndex,
+          answer_text: question.choices[answerIndex] ?? null,
+        };
+      });
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('player_custom_profiles')
+    .upsert(rows, { onConflict: 'player_id,question_id' });
+
+  if (error) {
+    console.error('Unable to persist friend-group profile answers', error);
+  }
+}
+
+function maybePrepareFriendGroupFollowUpQuestion(previousState: GameState, nextIndex: number) {
+  const nextQuestion = previousState.questionDeck[nextIndex];
+
+  if (!isFriendGroupCustomQuestion(nextQuestion)) {
+    return previousState;
+  }
+
+  if (nextIndex < CUSTOM_PROFILE_QUESTION_COUNT) {
+    return previousState;
+  }
+
+  if (nextQuestion.keywords.includes('friend-group-follow-up')) {
+    return previousState;
+  }
+
+  const generatedQuestion = buildFriendGroupFollowUpQuestion(previousState, nextIndex);
+
+  if (!generatedQuestion) {
+    return previousState;
+  }
+
+  const nextDeck = [...previousState.questionDeck];
+  nextDeck[nextIndex] = generatedQuestion;
+
+  return {
+    ...previousState,
+    questionDeck: nextDeck,
+  };
+}
+
+function buildFriendGroupFollowUpQuestion(previousState: GameState, nextIndex: number): Question | null {
+  const answeredHistory = previousState.customResponseHistory.filter(entry =>
+    Object.values(entry.playerAnswers).some(answer => typeof answer === 'number' && answer >= 0)
+  );
+
+  if (answeredHistory.length === 0) {
+    return null;
+  }
+
+  const randomHistory = answeredHistory[Math.floor(Math.random() * answeredHistory.length)];
+  const answeredPlayerEntries = Object.entries(randomHistory.playerAnswers)
+    .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0)
+    .map(([playerId, answer]) => ({ playerId, answer }));
+
+  if (answeredPlayerEntries.length === 0) {
+    return null;
+  }
+
+  const selectedEntry = answeredPlayerEntries[Math.floor(Math.random() * answeredPlayerEntries.length)];
+  const selectedPlayer = previousState.players.find(player => player.id === selectedEntry.playerId);
+
+  if (!selectedPlayer) {
+    return null;
+  }
+
+  const chosenOption = randomHistory.choices[selectedEntry.answer] ?? 'that option';
+  const allPlayerNames = previousState.players.map(player => player.name).filter(Boolean);
+  const distractors = shuffleArray(allPlayerNames.filter(name => name !== selectedPlayer.name));
+  const choicePool = [selectedPlayer.name, ...distractors].slice(0, 4);
+
+  while (choicePool.length < 4) {
+    choicePool.push(`Player ${choicePool.length + 1}`);
+  }
+
+  const choices = shuffleArray(choicePool);
+  const correct = Math.max(0, choices.indexOf(selectedPlayer.name));
+
+  return {
+    id: `friend-group-follow-up-${nextIndex}-${crypto.randomUUID()}`,
+    question: `For "${randomHistory.question}", who picked "${chosenOption}"?`,
+    choices,
+    correct,
+    probabilities: choices.map((_, index) => (index === correct ? 0.58 : 0.14)),
+    keywords: ['friend-group-pack', 'friend-group-follow-up', 'player-history'],
+    category: 'Friend Group Pack: About Your Crew',
+    source: null,
+  };
+}
+
+function shuffleArray<T>(items: T[]) {
+  const copy = [...items];
+
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+
+  return copy;
 }
 
 function buildQuestionResults(players: PlayerState[], correctIndex: number): QuestionResult {
@@ -1120,9 +1801,21 @@ function playAgainState(previousState: GameState): GameState {
       currentAnswer: null,
       minigameScore: 0,
     })),
-    pdfs: previousState.pdfs,
+    pdfs: resetPdfSelections(previousState.pdfs),
+    customPacks: resetCustomPackSelections(previousState.customPacks),
+    profileAssignments: {},
+    profileResponses: {},
+    customResponseHistory: [],
     phase: 'room',
   };
+}
+
+function resetPdfSelections(pdfs: GameState['pdfs']) {
+  return pdfs.map(pdf => ({ ...pdf, enabled: false }));
+}
+
+function resetCustomPackSelections(customPacks: GameState['customPacks']) {
+  return customPacks.map(pack => ({ ...pack, enabled: false }));
 }
 
 function getTimeRemaining(roundDeadlineAt: string): number {
@@ -1197,7 +1890,16 @@ function coerceIncomingState(value: unknown): GameState | null {
     roundDeadlineAt: candidate.roundDeadlineAt ?? null,
     players: Array.isArray(candidate.players) ? candidate.players : [],
     questionDeck: Array.isArray(candidate.questionDeck) ? candidate.questionDeck : [],
-    pdfs: Array.isArray(candidate.pdfs) ? candidate.pdfs : [],
+    pdfs: resetPdfSelections(Array.isArray(candidate.pdfs) ? candidate.pdfs : []),
+    customPacks: resetCustomPackSelections(Array.isArray(candidate.customPacks) ? candidate.customPacks : []),
+    profileAssignments:
+      candidate.profileAssignments && typeof candidate.profileAssignments === 'object'
+        ? candidate.profileAssignments as Record<string, Question[]>
+        : {},
+    profileResponses:
+      candidate.profileResponses && typeof candidate.profileResponses === 'object'
+        ? candidate.profileResponses as Record<string, number[]>
+        : {},
     timeRemaining:
       typeof candidate.timeRemaining === 'number'
         ? candidate.timeRemaining
@@ -1210,6 +1912,9 @@ function coerceIncomingState(value: unknown): GameState | null {
       typeof candidate.totalQuestions === 'number'
         ? candidate.totalQuestions
         : GAME_CONFIG.defaultQuestionCount,
+    customResponseHistory: Array.isArray(candidate.customResponseHistory)
+      ? candidate.customResponseHistory
+      : [],
   };
 }
 

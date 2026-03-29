@@ -10,6 +10,13 @@ import { AppFlowProvider, useAppFlow } from '@/app/AppFlowContext';
 import { isPhoneDevice } from '@/app/isPhoneDevice';
 import { StartFlowView } from '@/app/views/StartFlowView';
 import { RealStartView } from '@/app/views/RealStartView';
+import { AudioSettingsProvider } from '@/shared/context/AudioSettingsContext';
+import { useAccentButtonClickSound } from '@/shared/hooks/useAccentButtonClickSound';
+
+function AccentButtonClickSound() {
+  useAccentButtonClickSound();
+  return null;
+}
 
 function RootRedirect() {
   const { user, isLoading } = useAuth();
@@ -85,21 +92,24 @@ function HostRoute() {
 
 export function App() {
   return (
-    <AppFlowProvider>
-      <AuthProvider>
-        <GameProvider>
-          <PhoneRouteGuard />
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/start" element={<StartRoute />} />
-            <Route path="/real" element={<RealRoute />} />
-            <Route path="/auth" element={<AuthRoute />} />
-            <Route path="/host/*" element={<HostRoute />} />
-            <Route path="/play/*" element={<PhoneApp />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </GameProvider>
-      </AuthProvider>
-    </AppFlowProvider>
+    <AudioSettingsProvider>
+      <AppFlowProvider>
+        <AuthProvider>
+          <GameProvider>
+            <AccentButtonClickSound />
+            <PhoneRouteGuard />
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/start" element={<StartRoute />} />
+              <Route path="/real" element={<RealRoute />} />
+              <Route path="/auth" element={<AuthRoute />} />
+              <Route path="/host/*" element={<HostRoute />} />
+              <Route path="/play/*" element={<PhoneApp />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </GameProvider>
+        </AuthProvider>
+      </AppFlowProvider>
+    </AudioSettingsProvider>
   );
 }

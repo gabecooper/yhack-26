@@ -46,6 +46,8 @@ export function createInitialState(): GameState {
     phase: 'home',
     players: [],
     questionDeck: [],
+    profileAssignments: {},
+    profileResponses: {},
     currentQuestion: null,
     questionIndex: 0,
     totalQuestions: GAME_CONFIG.defaultQuestionCount,
@@ -57,8 +59,10 @@ export function createInitialState(): GameState {
     vaultRun: null,
     winnerId: null,
     pdfs: [],
+    customPacks: [],
     isPreparingGame: false,
     preparationMessage: null,
+    customResponseHistory: [],
   };
 }
 

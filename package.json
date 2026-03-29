@@ -6,14 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:intro-audio": "node ./scripts/generate-intro-audio.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.0.0",
+    "framer-motion": "^12.0.0",
+    "pdfjs-dist": "^5.5.207",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0",
-    "framer-motion": "^12.0.0",
-    "@supabase/supabase-js": "^2.0.0"
+    "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

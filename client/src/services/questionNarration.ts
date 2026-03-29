@@ -23,13 +23,13 @@ function stopActiveNarrationAudio() {
   activeNarrationAudio = null;
 }
 
-export function stopQuestionNarration() {
+export function stopNarration() {
   activeNarrationToken += 1;
   stopActiveNarrationAudio();
 }
 
-export function getQuestionNarrationAudioUrl(questionId: string, text: string) {
-  const cacheKey = getNarrationCacheKey(questionId, text);
+export function getNarrationAudioUrl(audioId: string, text: string) {
+  const cacheKey = getNarrationCacheKey(audioId, text);
   const cached = narrationCache.get(cacheKey);
 
   if (cached) {
@@ -57,11 +57,11 @@ export function getQuestionNarrationAudioUrl(questionId: string, text: string) {
   return request;
 }
 
-export async function playQuestionNarration(questionId: string, text: string) {
+export async function playNarration(audioId: string, text: string) {
   const normalizedText = text.trim();
 
   if (!normalizedText) {
-    stopQuestionNarration();
+    stopNarration();
     return;
   }
 
@@ -70,7 +70,7 @@ export async function playQuestionNarration(questionId: string, text: string) {
   stopActiveNarrationAudio();
 
   try {
-    const audioUrl = await getQuestionNarrationAudioUrl(questionId, normalizedText);
+    const audioUrl = await getNarrationAudioUrl(audioId, normalizedText);
 
     if (playbackToken !== activeNarrationToken) {
       return;
@@ -84,7 +84,11 @@ export async function playQuestionNarration(questionId: string, text: string) {
     await narrationAudio.play();
   } catch (error) {
     if (!isPlaybackAbortError(error)) {
-      console.warn('Question narration unavailable', error);
+      console.warn('Narration unavailable', error);
     }
   }
 }
+
+export const stopQuestionNarration = stopNarration;
+export const getQuestionNarrationAudioUrl = getNarrationAudioUrl;
+export const playQuestionNarration = playNarration;

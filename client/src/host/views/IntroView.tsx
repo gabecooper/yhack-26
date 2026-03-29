@@ -2,24 +2,49 @@ import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { useEffect } from 'react';
+import introTutorialAudioSrc from '@/assets/audio/intro-tutorial.mp3';
+
+const INTRO_SEQUENCE_DURATION_SECONDS = 25.715;
+const INTRO_TEXT_FADE_SECONDS = 0.45;
+const STARTING_MESSAGE_DELAY_SECONDS = 24.1;
 
 const LINES = [
-  { text: 'The crew is assembled.', delay: 0.5 },
-  { text: 'The vault awaits.', delay: 2.0 },
-  { text: 'Answer questions to advance through the heist.', delay: 3.5 },
-  { text: 'Every correct answer grows your haul.', delay: 5.0 },
-  { text: 'Wrong answers leave cash on the table.', delay: 6.5 },
-  { text: 'Finish with the biggest score. Win it all.', delay: 8.0 },
+  { text: 'The crew is assembled.', delay: 0 },
+  { text: 'The vault awaits.', delay: 2.18 },
+  { text: 'Answer questions to advance through the heist.', delay: 4.27 },
+  { text: 'Every correct answer grows your haul.', delay: 8.91 },
+  { text: 'Wrong answers leave cash on the table.', delay: 12.18 },
+  { text: 'Finish with the biggest score.', delay: 15.52 },
+  { text: 'Win it all.', delay: 17.51 },
 ];
 
 export function IntroView() {
   const { preparationMessage } = useGameState();
-  const { setPhase } = useGameActions();
+  const { advancePhase } = useGameActions();
 
   useEffect(() => {
-    const timeout = setTimeout(() => setPhase('question'), 11000);
+    const timeout = window.setTimeout(
+      () => advancePhase(),
+      Math.ceil(INTRO_SEQUENCE_DURATION_SECONDS * 1000)
+    );
+
     return () => clearTimeout(timeout);
-  }, [setPhase]);
+  }, [advancePhase]);
+
+  useEffect(() => {
+    const introAudio = new Audio(introTutorialAudioSrc);
+    introAudio.preload = 'auto';
+    introAudio.volume = 0.9;
+
+    void introAudio.play().catch(() => {
+      // Browsers can block autoplay until the first interaction.
+    });
+
+    return () => {
+      introAudio.pause();
+      introAudio.currentTime = 0;
+    };
+  }, []);
 
   return (
     <HostLayout>
@@ -38,7 +63,7 @@ export function IntroView() {
             key={i}
             initial={{ x: -40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            transition={{ delay, duration: 0.6 }}
+            transition={{ delay, duration: INTRO_TEXT_FADE_SECONDS }}
             className="font-ui text-2xl text-gray-200 text-center"
           >
             {text}
@@ -48,7 +73,7 @@ export function IntroView() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 10 }}
+          transition={{ delay: STARTING_MESSAGE_DELAY_SECONDS }}
           className="mt-8 flex flex-col items-center gap-4"
         >
           <p className="font-handwritten text-xl text-vault-gold animate-pulse">

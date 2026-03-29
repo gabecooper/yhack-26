@@ -10,6 +10,7 @@ import b4Bg from '@/assets/backgrounds/b4.png';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 const QUESTION_BACKGROUNDS = [v4RoofBg, b1Bg, b2Bg, b3Bg, b4Bg];
+const QUESTION_NARRATION_DELAY_MS = 5000;
 
 function getBackgroundIndex(questionId: string) {
   let hash = 0;
@@ -43,9 +44,12 @@ export function QuestionView() {
       return;
     }
 
-    void playQuestionNarration(currentQuestion.id, currentQuestion.question);
+    const narrationTimeoutId = window.setTimeout(() => {
+      void playQuestionNarration(currentQuestion.id, currentQuestion.question);
+    }, QUESTION_NARRATION_DELAY_MS);
 
     return () => {
+      window.clearTimeout(narrationTimeoutId);
       stopQuestionNarration();
     };
   }, [currentQuestion?.id, currentQuestion?.question]);

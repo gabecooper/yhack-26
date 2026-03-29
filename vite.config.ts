@@ -1,7 +1,9 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { handleCustomPackRequest } from './server/gemini-custom-pack.js';
 import { handleQuestionAudioRequest } from './server/elevenlabs-question-audio.js';
+import { handleSpecialQuipRequest } from './server/gemini-special-quip.js';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -48,6 +50,82 @@ export default defineConfig(({ mode }) => {
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({
                 error: error instanceof Error ? error.message : 'Failed to generate question narration',
+              }));
+            }
+          });
+
+          server.middlewares.use('/api/gemini-special-quip', async (req, res, next) => {
+            if (req.method !== 'POST') {
+              next();
+              return;
+            }
+
+            try {
+              const body = await new Promise<string>((resolve, reject) => {
+                let rawBody = '';
+
+                req.on('data', chunk => {
+                  rawBody += chunk;
+                });
+
+                req.on('end', () => resolve(rawBody));
+                req.on('error', reject);
+              });
+
+              const response = await handleSpecialQuipRequest({
+                method: req.method,
+                body,
+                apiKey: env.GEMINI_API_KEY,
+              });
+
+              res.statusCode = response.status;
+              Object.entries(response.headers).forEach(([key, value]) => {
+                res.setHeader(key, value);
+              });
+              res.end(response.body);
+            } catch (error) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                error: error instanceof Error ? error.message : 'Failed to generate special quip',
+              }));
+            }
+          });
+
+          server.middlewares.use('/api/gemini-custom-pack', async (req, res, next) => {
+            if (req.method !== 'POST') {
+              next();
+              return;
+            }
+
+            try {
+              const body = await new Promise<string>((resolve, reject) => {
+                let rawBody = '';
+
+                req.on('data', chunk => {
+                  rawBody += chunk;
+                });
+
+                req.on('end', () => resolve(rawBody));
+                req.on('error', reject);
+              });
+
+              const response = await handleCustomPackRequest({
+                method: req.method,
+                body,
+                apiKey: env.GEMINI_API_KEY,
+              });
+
+              res.statusCode = response.status;
+              Object.entries(response.headers).forEach(([key, value]) => {
+                res.setHeader(key, value);
+              });
+              res.end(response.body);
+            } catch (error) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                error: error instanceof Error ? error.message : 'Failed to generate custom pack',
               }));
             }
           });

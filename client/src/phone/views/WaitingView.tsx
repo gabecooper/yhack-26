@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { PhoneLayout } from '@/shared/components/PhoneLayout';
 import { CharacterAvatar } from '@/shared/components/CharacterAvatar';
-import { HEIST_CHARACTERS } from '@/constants/characters';
 import type { PlayerState } from '@/types/player';
 
 interface WaitingViewProps {
@@ -10,8 +9,6 @@ interface WaitingViewProps {
 }
 
 export function WaitingView({ player, onLeave }: WaitingViewProps) {
-  const character = HEIST_CHARACTERS[player.characterIndex];
-
   return (
     <PhoneLayout contentClassName="justify-center">
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6">
@@ -23,11 +20,8 @@ export function WaitingView({ player, onLeave }: WaitingViewProps) {
           <p className="font-ui text-xs uppercase tracking-[0.32em] text-white/55">
             Ready
           </p>
-          <CharacterAvatar characterIndex={player.characterIndex} size={88} showRole />
+          <CharacterAvatar characterIndex={player.characterIndex} size={88} />
           <h2 className="font-title text-4xl text-white">{player.name}</h2>
-          <p className="font-ui text-base text-white/70">
-            You are the <span className="text-vault-gold">{character?.role}</span>
-          </p>
           <p className="max-w-[16rem] font-ui text-sm text-white/55">
             Sit tight while the host finishes setting up the next round.
           </p>
