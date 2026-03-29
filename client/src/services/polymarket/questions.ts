@@ -83,6 +83,14 @@ function normalizeChoiceLabel(label: string | null | undefined) {
   return label?.replace(/^Will\s+/i, '').replace(/\?$/, '').trim() || 'Unknown';
 }
 
+function stripLeadingPredictLabel(text: string | null | undefined) {
+  return text?.trim().replace(/^Predict:\s*/i, '').trim() || '';
+}
+
+function formatPolymarketSubtitle(tag: string) {
+  return `${getPolymarketCategoryName(tag)} | Predict:`;
+}
+
 function eventToQuestion(event: PolymarketEvent, tag: string): Question | null {
   if (!event.markets?.length) {
     return null;
@@ -108,7 +116,8 @@ function eventToQuestion(event: PolymarketEvent, tag: string): Question | null {
 
     return {
       id: `poly-${event.id ?? event.slug ?? crypto.randomUUID()}`,
-      question: event.title?.trim() || 'Untitled market',
+      question: stripLeadingPredictLabel(event.title) || 'Untitled market',
+      displaySubtitle: formatPolymarketSubtitle(tag),
       choices,
       probabilities,
       correct: probabilities.indexOf(Math.max(...probabilities)),

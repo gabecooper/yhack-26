@@ -6,6 +6,8 @@ export interface GameActions {
   joinRoom: (roomCode: string, playerName: string) => Promise<string | null>;
   leaveRoom: () => Promise<void>;
   startGame: (options?: GameStartOptions) => Promise<void>;
+  setSelectedPolymarketCategories: (categories: string[]) => void;
+  clearSelectedMaterials: () => void;
   simulateDevPlayerJoin: (characterIndex: number) => void;
   submitAnswer: (playerId: string, answer: ProfileResponseValue) => void;
   submitMinigameAnswer: (playerId: string, answer: number) => void;

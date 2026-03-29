@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import { playAudioWithRetry, stopAudioPlayback } from '@/shared/services/audioPlayback';
 import tickingAudioSrc from '@/assets/audio/clock-tick-tock.mp3';
 
 interface UseTickingAudioOptions {
@@ -16,9 +18,12 @@ export function useTickingAudio({
   totalTime,
   deadlineAt = null,
 }: UseTickingAudioOptions) {
+  const { soundEffectsEnabled } = useAudioSettings();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopRetryRef = useRef<(() => void) | null>(null);
   const stateRef = useRef({
     enabled,
+    soundEffectsEnabled,
     timeRemaining,
     totalTime,
     deadlineAt,
@@ -27,11 +32,12 @@ export function useTickingAudio({
   useEffect(() => {
     stateRef.current = {
       enabled,
+      soundEffectsEnabled,
       timeRemaining,
       totalTime,
       deadlineAt,
     };
-  }, [deadlineAt, enabled, timeRemaining, totalTime]);
+  }, [deadlineAt, enabled, soundEffectsEnabled, timeRemaining, totalTime]);
 
   useEffect(() => {
     if (typeof Audio === 'undefined') {
@@ -45,8 +51,9 @@ export function useTickingAudio({
     audioRef.current = audio;
 
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(audio);
       audioRef.current = null;
     };
   }, []);
@@ -58,9 +65,10 @@ export function useTickingAudio({
       return;
     }
 
-    if (!enabled || timeRemaining <= 0) {
-      audio.pause();
-      audio.currentTime = 0;
+    if (!enabled || !soundEffectsEnabled || timeRemaining <= 0) {
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(audio);
       return;
     }
 
@@ -84,26 +92,27 @@ export function useTickingAudio({
 
       const nextState = stateRef.current;
 
-      if (!nextState.enabled) {
-        audio.pause();
-        audio.currentTime = 0;
+      if (!nextState.enabled || !nextState.soundEffectsEnabled) {
+        stopRetryRef.current?.();
+        stopRetryRef.current = null;
+        stopAudioPlayback(audio);
         return;
       }
 
       const liveTimeRemaining = getLiveTimeRemaining();
 
       if (liveTimeRemaining <= 0) {
-        audio.pause();
-        audio.currentTime = 0;
+        stopRetryRef.current?.();
+        stopRetryRef.current = null;
+        stopAudioPlayback(audio);
         return;
       }
 
       audio.playbackRate = 1;
 
       if (audio.paused) {
-        void audio.play().catch(() => {
-          // Ignore autoplay restrictions; the next user interaction can allow playback.
-        });
+        stopRetryRef.current?.();
+        stopRetryRef.current = playAudioWithRetry(audio);
       }
     };
 
@@ -113,8 +122,9 @@ export function useTickingAudio({
     return () => {
       isDisposed = true;
       window.clearInterval(intervalId);
-      audio.pause();
-      audio.currentTime = 0;
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(audio);
     };
-  }, [enabled, timeRemaining]);
+  }, [enabled, soundEffectsEnabled, timeRemaining]);
 }

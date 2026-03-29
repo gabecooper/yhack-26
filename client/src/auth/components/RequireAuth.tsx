@@ -9,7 +9,7 @@ function AuthLoadingScreen() {
         <p className="font-ui text-xs uppercase tracking-[0.32em] text-white/45">
           Syncing Session
         </p>
-        <h1 className="mt-3 font-title text-4xl text-vault-gold">R.A.C.O.O.N.</h1>
+        <h1 className="mt-3 font-title text-4xl text-vault-gold">R.A.C.C.O.O.N.</h1>
       </div>
     </div>
   );

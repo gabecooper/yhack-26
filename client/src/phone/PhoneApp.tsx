@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { getStoredPlayerSession } from '@/app/sessionRouting';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { JoinView } from './views/JoinView';
+import { ReconnectView } from './views/ReconnectView';
 import { WaitingView } from './views/WaitingView';
 import { ProfilePhoneView } from './views/ProfilePhoneView';
 import { QuestionPhoneView } from './views/QuestionPhoneView';
@@ -19,65 +21,25 @@ const PAGE_TRANSITION = {
 function getHostPhaseSignal(phase: GamePhase) {
   switch (phase) {
     case 'home':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Home Base',
-        detail: 'The host is setting up the room.',
-      };
+      return 'Home Base';
     case 'room':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Lobby Open',
-        detail: 'The room is live and ready for players.',
-      };
+      return 'Lobby Open';
     case 'intro':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Intro Rolling',
-        detail: 'The big screen is running the briefing.',
-      };
+      return 'Intro Rolling';
     case 'profile':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Survey Live',
-        detail: 'Answer the quick setup questions now.',
-      };
+      return 'Survey Live';
     case 'question':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Question Live',
-        detail: 'The next prompt is up. Respond on your phone.',
-      };
+      return 'Question Live';
     case 'results':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Results Reveal',
-        detail: 'The answer and reactions are on the board.',
-      };
+      return 'Results Reveal';
     case 'leaderboard':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Scores Updating',
-        detail: 'The leaderboard is up on the big screen.',
-      };
+      return 'Scores Updating';
     case 'win':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Victory Screen',
-        detail: 'The round is wrapping up.',
-      };
+      return 'Victory Screen';
     case 'gameover':
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Game Over',
-        detail: 'The session has ended on the host screen.',
-      };
+      return 'Game Over';
     default:
-      return {
-        eyebrow: 'Host Screen',
-        title: 'Syncing',
-        detail: 'Waiting for the next update from the host.',
-      };
+      return 'Syncing';
   }
 }
 
@@ -87,6 +49,7 @@ export function PhoneApp() {
   const [playerId, setPlayerId] = useState<string | null>(() =>
     localStorage.getItem('heist_player_id')
   );
+  const storedPlayerSession = getStoredPlayerSession();
 
   useEffect(() => {
     if (playerId) localStorage.setItem('heist_player_id', playerId);
@@ -102,7 +65,25 @@ export function PhoneApp() {
     setPlayerId(null);
   };
 
-  if (!playerId || !player) {
+  if (!playerId) {
+    return (
+      <>
+        <JoinView onJoin={handleJoin} />
+      </>
+    );
+  }
+
+  if (!player) {
+    if (storedPlayerSession && storedPlayerSession.playerId === playerId) {
+      return (
+        <ReconnectView
+          playerName={storedPlayerSession.playerName}
+          roomCode={storedPlayerSession.roomCode}
+          onLeave={handleLeave}
+        />
+      );
+    }
+
     return (
       <>
         <JoinView onJoin={handleJoin} />
@@ -127,6 +108,27 @@ export function PhoneApp() {
             <QuestionPhoneView playerId={playerId} />
           ) : phase === 'results' ? (
             <ResultsPhoneView playerId={playerId} />
+          ) : phase === 'leaderboard' ? (
+            <WaitingView
+              player={player}
+              onLeave={handleLeave}
+              statusLabel="Scores Updating"
+              message="The host is showing the standings. Your phone will sync into the next round automatically."
+            />
+          ) : phase === 'win' ? (
+            <WaitingView
+              player={player}
+              onLeave={handleLeave}
+              statusLabel="Heist Complete"
+              message="The final winner reveal is on the host screen."
+            />
+          ) : phase === 'gameover' ? (
+            <WaitingView
+              player={player}
+              onLeave={handleLeave}
+              statusLabel="Vault Sealed"
+              message="The game is over on the host screen."
+            />
           ) : (
             <SpectatorView player={player} />
           )}
@@ -134,28 +136,20 @@ export function PhoneApp() {
       </AnimatePresence>
 
       <div
-        className="pointer-events-none fixed left-1/2 z-[60] w-[min(18rem,calc(100%-5.5rem))] -translate-x-1/2"
+        className="pointer-events-none fixed left-1/2 z-[60] -translate-x-1/2"
         style={{ top: 'max(0.9rem, calc(env(safe-area-inset-top) + 0.45rem))' }}
       >
         <AnimatePresence mode="wait">
-          <motion.div
+          <motion.p
             key={`host-phase-${phase}`}
             initial={{ opacity: 0, y: -12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.24, ease: 'easeOut' }}
-            className="rounded-[1.25rem] border border-white/10 bg-black/45 px-4 py-3 text-center shadow-[0_12px_36px_rgba(0,0,0,0.28)] backdrop-blur-md"
+            className="phone-status-chip min-w-[11rem] bg-black/45 px-4 py-2 text-center shadow-[0_10px_26px_rgba(0,0,0,0.22)]"
           >
-            <p className="font-ui text-[10px] uppercase tracking-[0.28em] text-vault-gold/80">
-              {hostPhaseSignal.eyebrow}
-            </p>
-            <p className="mt-1 font-title text-xl leading-none text-white">
-              {hostPhaseSignal.title}
-            </p>
-            <p className="mt-1 font-ui text-[11px] leading-relaxed text-white/68">
-              {hostPhaseSignal.detail}
-            </p>
-          </motion.div>
+            Host: {hostPhaseSignal}
+          </motion.p>
         </AnimatePresence>
       </div>
     </div>

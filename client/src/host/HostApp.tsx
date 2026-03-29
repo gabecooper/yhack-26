@@ -5,6 +5,7 @@ import { DevToolbar } from '@/shared/components/DevToolbar';
 import { useAppFlow } from '@/app/AppFlowContext';
 import { useLoopingAudio } from '@/shared/hooks/useLoopingAudio';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import { stopQuestionNarration } from '@/services/questionNarration';
 import introMusicSrc from '@/assets/audio/intro-music.mp3';
 import levelMusicSrc from '@/assets/audio/level-music.mp3';
 import levelMusic2Src from '@/assets/audio/level-music-2.mp3';
@@ -56,7 +57,7 @@ export function HostApp() {
   const { flow } = useAppFlow();
   const { musicEnabled } = useAudioSettings();
   const shouldPlayLobbyMusic = phase === 'home' || phase === 'room';
-  const shouldPlayQuestionMusic = phase === 'question';
+  const shouldPlayQuestionMusic = phase === 'question' || phase === 'profile';
   const [activeQuestionMusicSrc, setActiveQuestionMusicSrc] = useState(() => pickRandomTrack());
 
   useEffect(() => {
@@ -66,6 +67,12 @@ export function HostApp() {
 
     setActiveQuestionMusicSrc(currentTrack => pickRandomTrack(currentTrack));
   }, [currentQuestion?.id, shouldPlayQuestionMusic]);
+
+  useEffect(() => {
+    if (phase !== 'question') {
+      stopQuestionNarration();
+    }
+  }, [phase]);
 
   useLoopingAudio({
     enabled: musicEnabled && shouldPlayLobbyMusic,

@@ -184,7 +184,7 @@ function buildFallbackQuestionSet({
       correct: 0,
       keywords,
       category: label,
-      source: filename,
+      source: null,
     },
     {
       id: `fallback-${slugify(sourceLabel)}-2`,
@@ -193,7 +193,7 @@ function buildFallbackQuestionSet({
       correct: 0,
       keywords,
       category: label,
-      source: filename,
+      source: null,
     },
     {
       id: `fallback-${slugify(sourceLabel)}-3`,
@@ -202,7 +202,7 @@ function buildFallbackQuestionSet({
       correct: 0,
       keywords,
       category: label,
-      source: filename,
+      source: null,
     },
     {
       id: `fallback-${slugify(sourceLabel)}-4`,
@@ -211,7 +211,7 @@ function buildFallbackQuestionSet({
       correct: 0,
       keywords,
       category: label,
-      source: filename,
+      source: null,
     },
     {
       id: `fallback-${slugify(sourceLabel)}-5`,
@@ -220,7 +220,7 @@ function buildFallbackQuestionSet({
       correct: 0,
       keywords,
       category: label,
-      source: filename,
+      source: null,
     },
   ];
 }
@@ -264,15 +264,15 @@ function describeInvalidQuestion({
   }
 
   return {
-    question: {
-      id: `${slugify(label)}-${slugify(filename)}-${index + 1}`,
-      question,
-      choices,
-      correct,
-      keywords: buildKeywords(sourceType, label),
-      category: label,
-      source: filename,
-    },
+      question: {
+        id: `${slugify(label)}-${slugify(filename)}-${index + 1}`,
+        question,
+        choices,
+        correct,
+        keywords: buildKeywords(sourceType, label),
+        category: label,
+        source: null,
+      },
     invalidReason: null,
   };
 }

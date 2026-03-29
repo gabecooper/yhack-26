@@ -20,43 +20,38 @@ export function ResultsPhoneView({ playerId }: ResultsPhoneViewProps) {
 
   return (
     <PhoneLayout contentClassName="justify-center">
-      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5 text-center">
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center text-center">
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300 }}
-          className="soft-glass-panel w-full rounded-[2rem] px-6 py-8"
+          className="phone-card-strong w-full rounded-[1.8rem] px-6 py-7"
         >
-          <motion.div
-            animate={isCorrect ? { rotate: [0, -10, 10, 0] } : { x: [0, -8, 8, -8, 0] }}
-            transition={{ delay: 0.3 }}
-            className="mb-4 text-6xl"
-          >
-            {isCorrect ? (
-              <span className="font-title text-vault-green">CORRECT!</span>
-            ) : (
-              <span className="font-title text-vault-red">WRONG!</span>
-            )}
-          </motion.div>
-
-          <p className="font-ui text-xs uppercase tracking-[0.28em] text-white/50">
-            Correct Answer
+          <p className="phone-status-chip">
+            {isCorrect ? 'Correct' : 'Wrong'}
           </p>
-          <div
-            className="mt-4 inline-block rounded-full px-5 py-2 font-ui text-lg font-bold text-white"
-            style={{ backgroundColor: correctAnswerMeta.bg }}
-          >
-            {correctAnswerMeta.label}: {correctChoice}
+          <h2 className={`mt-4 font-title text-4xl ${isCorrect ? 'text-vault-green' : 'text-vault-red'}`}>
+            {isCorrect ? '+$100' : 'No Payout'}
+          </h2>
+
+          <div className="phone-card mt-5 rounded-[1.4rem] px-4 py-4 text-left">
+            <p className="font-ui text-[11px] uppercase tracking-[0.24em] text-white/50">
+              Correct Answer
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <span
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-title text-2xl text-white"
+                style={{ backgroundColor: correctAnswerMeta.bg }}
+              >
+                {correctAnswerMeta.label}
+              </span>
+              <p className="font-ui text-lg font-semibold text-white/90">
+                {correctChoice}
+              </p>
+            </div>
           </div>
 
-          <div className="mt-6">
-            {isCorrect ? (
-              <p className="font-title text-3xl text-vault-gold">+$100</p>
-            ) : (
-              <p className="font-ui text-lg text-vault-red">No payout this round.</p>
-            )}
-          </div>
-          <p className="mt-2 font-ui text-sm text-white/55">
+          <p className="mt-5 font-ui text-sm text-white/55">
             Score: <span className="text-vault-gold">${player?.score ?? 0}</span>
           </p>
         </motion.div>

@@ -7,14 +7,16 @@ interface PhoneLayoutProps {
   backgroundImage?: string;
   overlayClassName?: string;
   contentClassName?: string;
+  syncMessage?: string;
 }
 
 export function PhoneLayout({
   children,
-  minimalSettingsGear = false,
+  minimalSettingsGear = true,
   backgroundImage,
   overlayClassName = '',
   contentClassName = '',
+  syncMessage = 'Refresh Page to Sync',
 }: PhoneLayoutProps) {
   return (
     <div className="mobile-safe-frame relative w-full overflow-hidden bg-black">
@@ -29,9 +31,14 @@ export function PhoneLayout({
       ) : null}
 
       <div
-        className={`mobile-safe-content relative z-10 flex min-h-[100dvh] flex-col overflow-y-auto px-5 ${contentClassName}`}
+        className={`mobile-safe-content relative z-10 flex min-h-[100dvh] flex-col overflow-y-auto px-5 text-white ${contentClassName}`}
       >
-        {children}
+        <div className="flex min-h-full flex-1 flex-col">
+          {children}
+        </div>
+        <p className="phone-sync-note mt-4 text-center">
+          {syncMessage}
+        </p>
       </div>
       <SettingsGear minimal={minimalSettingsGear} />
     </div>

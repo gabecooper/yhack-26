@@ -82,6 +82,7 @@ export async function playNarration(audioId: string, text: string) {
     const narrationAudio = new Audio(audioUrl);
     narrationAudio.preload = 'auto';
     narrationAudio.volume = 0.9;
+    narrationAudio.setAttribute('playsinline', 'true');
     narrationAudio.addEventListener('ended', () => {
       if (activeNarrationAudio === narrationAudio) {
         activeNarrationAudio = null;

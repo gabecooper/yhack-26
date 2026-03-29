@@ -45,6 +45,7 @@ export function createInitialState(): GameState {
     roomCode: '',
     phase: 'home',
     players: [],
+    selectedPolymarketCategories: [],
     questionDeck: [],
     profileAssignments: {},
     profileResponses: {},

@@ -15,7 +15,11 @@ import b4Bg from '@/assets/backgrounds/b4.png';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 const QUESTION_BACKGROUNDS = [v4RoofBg, b1Bg, b2Bg, b3Bg, b4Bg];
-const QUESTION_NARRATION_DELAY_MS = 5000;
+const QUESTION_NARRATION_DELAY_MS = 2000;
+
+function isExternalSourceUrl(source: string | null | undefined) {
+  return typeof source === 'string' && /^https?:\/\//i.test(source.trim());
+}
 
 function getBackgroundIndex(questionId: string) {
   let hash = 0;
@@ -43,6 +47,12 @@ export function QuestionView() {
       : v4RoofBg,
     [currentQuestion?.id]
   );
+  const sourceUrl = useMemo(() => {
+    const source = currentQuestion?.source;
+    return typeof source === 'string' && isExternalSourceUrl(source)
+      ? source.trim()
+      : undefined;
+  }, [currentQuestion?.source]);
 
   useEffect(() => {
     if (!currentQuestion || !soundEffectsEnabled) {
@@ -81,14 +91,14 @@ export function QuestionView() {
             <p className="font-newspaper text-3xl md:text-4xl lg:text-5xl leading-tight question-copy">
               {currentQuestion.question}
             </p>
-            {currentQuestion.source && (
+            {sourceUrl && (
               <a
-                href={currentQuestion.source}
+                href={sourceUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="font-ui text-xs uppercase tracking-[0.24em] text-white/60 transition-opacity hover:opacity-80"
               >
-                View source market
+                View source
               </a>
             )}
           </div>
@@ -119,8 +129,8 @@ export function QuestionView() {
         <div
           className="absolute z-10"
           style={{
-            top: 0,
-            left: 0,
+            top: 20,
+            left: 16,
           }}
         >
           <div style={{ transform: 'scale(0.7)', transformOrigin: 'top left' }}>

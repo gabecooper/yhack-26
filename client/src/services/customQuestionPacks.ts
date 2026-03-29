@@ -21,8 +21,6 @@ interface CreateCustomQuestionPackInput {
   questions: Question[];
 }
 
-const BLOCKED_FRIEND_GROUP_QUESTION_FRAGMENT = 'most likely to forget at home';
-
 function normalizeCustomPackError(error: unknown): Error {
   if (
     typeof error === 'object'
@@ -41,7 +39,7 @@ function normalizeCustomPackError(error: unknown): Error {
 }
 
 function mapPackRow(row: CustomQuestionPackRow): CustomQuestionPack {
-  const questions = sanitizePackQuestions(Array.isArray(row.questions) ? row.questions : []);
+  const questions = normalizePackQuestions(Array.isArray(row.questions) ? row.questions : []);
 
   return {
     id: row.id,
@@ -56,18 +54,55 @@ function mapPackRow(row: CustomQuestionPackRow): CustomQuestionPack {
   };
 }
 
-function sanitizePackQuestions(questions: Question[]) {
-  return questions.filter(question => !isBlockedFriendGroupQuestion(question));
+function normalizePackQuestion(question: Question): Question | null {
+  const normalizedQuestion = String(question.question ?? '').trim();
+  const normalizedChoices = Array.isArray(question.choices)
+    ? question.choices.map(choice => String(choice ?? '').trim()).filter(Boolean)
+    : [];
+  const normalizedKeywords = Array.isArray(question.keywords)
+    ? question.keywords.map(keyword => String(keyword ?? '').trim()).filter(Boolean)
+    : [];
+
+  if (
+    !normalizedQuestion
+    || normalizedChoices.length < 4
+    || !Number.isInteger(question.correct)
+    || question.correct < 0
+    || question.correct >= normalizedChoices.length
+  ) {
+    return null;
+  }
+
+  return {
+    ...question,
+    question: normalizedQuestion,
+    choices: normalizedChoices,
+    keywords: normalizedKeywords,
+    displaySubtitle: question.displaySubtitle?.trim() || undefined,
+    category: question.category?.trim() || undefined,
+    source: typeof question.source === 'string'
+      ? question.source.trim() || null
+      : question.source ?? null,
+    answerPool: Array.isArray(question.answerPool)
+      ? question.answerPool.map(answer => String(answer ?? '').trim()).filter(Boolean)
+      : question.answerPool,
+  };
 }
 
-function isBlockedFriendGroupQuestion(question: Question) {
-  const normalizedQuestion = question.question.trim().toLowerCase();
-  const keywords = Array.isArray(question.keywords) ? question.keywords : [];
-  const isFriendGroupQuestion =
-    keywords.includes('friend-group-generated') || keywords.includes('friend-group-pack');
+export function normalizePackQuestions(questions: Question[]) {
+  return questions
+    .map(question => normalizePackQuestion(question))
+    .filter((question): question is Question => question !== null);
+}
 
-  return isFriendGroupQuestion
-    && normalizedQuestion.includes(BLOCKED_FRIEND_GROUP_QUESTION_FRAGMENT);
+function preparePackQuestionsForSave(questions: Question[]) {
+  const normalizedQuestions = normalizePackQuestions(questions);
+
+  if (normalizedQuestions.length === 0) {
+    throw new Error('This pack did not contain any valid questions to save.');
+  }
+
+  return normalizedQuestions;
 }
 
 export async function listCustomQuestionPacks(userId: string) {
@@ -100,7 +135,7 @@ export async function createCustomQuestionPack({
     throw new Error('Supabase is not configured.');
   }
 
-  const sanitizedQuestions = sanitizePackQuestions(questions);
+  const normalizedQuestions = preparePackQuestionsForSave(questions);
 
   const { data, error } = await supabase
     .from('custom_question_packs')
@@ -110,8 +145,8 @@ export async function createCustomQuestionPack({
       label,
       source_type: sourceType,
       source_kind: sourceKind,
-      questions: sanitizedQuestions,
-      question_count: sanitizedQuestions.length,
+      questions: normalizedQuestions,
+      question_count: normalizedQuestions.length,
     })
     .select('id, filename, label, source_type, source_kind, questions, question_count, created_at')
     .single();

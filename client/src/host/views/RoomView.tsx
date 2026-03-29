@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/auth/AuthContext';
 import { HostLayout } from '@/shared/components/HostLayout';
@@ -26,6 +26,7 @@ const FRIEND_GROUP_PACK_STYLES: Array<{
 type ScrapSectionId = 'polymarket' | 'coursework' | 'friends' | 'misc';
 
 const getCourseworkDisplayName = (filename: string) => filename.replace(/\.[^/.]+$/, '');
+const JOIN_URL = 'yhack-26-opal.vercel.app/play';
 const INITIAL_OPEN_SCRAP_SECTIONS: Record<ScrapSectionId, boolean> = {
   polymarket: false,
   coursework: false,
@@ -111,10 +112,19 @@ function interleaveSelectedPackQuestions(
 }
 
 export function RoomView() {
-  const { roomCode, players, customPacks, isPreparingGame, pendingFriendGroupPackDraft } = useGameState();
+  const {
+    roomCode,
+    players,
+    customPacks,
+    isPreparingGame,
+    pendingFriendGroupPackDraft,
+    selectedPolymarketCategories,
+  } = useGameState();
   const { user } = useAuth();
   const {
     startGame,
+    setSelectedPolymarketCategories,
+    clearSelectedMaterials,
     simulateDevPlayerJoin,
     upsertCustomPack,
     toggleCustomPack,
@@ -124,7 +134,6 @@ export function RoomView() {
   const { soundEffectsEnabled } = useAudioSettings();
   const { flow } = useAppFlow();
   const [openScrapSections, setOpenScrapSections] = useState(INITIAL_OPEN_SCRAP_SECTIONS);
-  const [selectedPolymarket, setSelectedPolymarket] = useState<string[]>([]);
   const [isFriendGroupCustomEnabled, setIsFriendGroupCustomEnabled] = useState(false);
   const [isFriendPackNameModalOpen, setIsFriendPackNameModalOpen] = useState(false);
   const [friendPackName, setFriendPackName] = useState('');
@@ -133,6 +142,8 @@ export function RoomView() {
   const [dismissedFriendPackDraftId, setDismissedFriendPackDraftId] = useState<string | null>(null);
   const [pendingDeleteFriendPackId, setPendingDeleteFriendPackId] = useState<string | null>(null);
   const [deletingFriendPackId, setDeletingFriendPackId] = useState<string | null>(null);
+  const [showCopiedJoinUrl, setShowCopiedJoinUrl] = useState(false);
+  const copiedJoinUrlTimeoutRef = useRef<number | null>(null);
   const [friendGroupPackSettings, setFriendGroupPackSettings] = useState<FriendGroupPackSettings>({
     numQuestions: GAME_CONFIG.defaultQuestionCount,
     style: 'for-friends',
@@ -142,7 +153,6 @@ export function RoomView() {
 
   const hasPlayers = players.length >= GAME_CONFIG.minPlayers;
   const hasMultiplePlayers = players.length > 1;
-  const hasLivePolymarketSelections = selectedPolymarket.length > 0;
   const courseworkPacks = customPacks.filter(pack => pack.sourceType === 'transcript');
   const friendGroupPacks = customPacks.filter(isFriendGroupSavedPack);
   const pendingDeleteFriendPack =
@@ -170,7 +180,6 @@ export function RoomView() {
         && !isCreatingFriendPack
         && !pendingFriendGroupPackDraft
       : hasPlayers
-        && (hasLivePolymarketSelections || hasCustomPackSelections)
         && !isPreparingGame;
   const selectedCoursework = selectedCourseworkPacks.map(pack => getCourseworkDisplayName(pack.filename));
   const friendGroupStyleLabel =
@@ -181,12 +190,16 @@ export function RoomView() {
       ...selectedFriendGroupPacks.map(getCustomPackDisplayName),
       `Friend Pack · ${friendGroupStyleLabel} · ${friendGroupPackSettings.numQuestions} Q`,
     ]
-    : [
-      ...selectedPolymarket.map(getPolymarketCategoryName),
-      ...selectedCoursework,
-      ...selectedFriendGroupPacks.map(getCustomPackDisplayName),
-      ...selectedMiscPacks.map(pack => getCourseworkDisplayName(pack.filename)),
-    ];
+    : (() => {
+      const materials = [
+        ...selectedPolymarketCategories.map(getPolymarketCategoryName),
+        ...selectedCoursework,
+        ...selectedFriendGroupPacks.map(getCustomPackDisplayName),
+        ...selectedMiscPacks.map(pack => getCourseworkDisplayName(pack.filename)),
+      ];
+
+      return materials.length > 0 ? materials : ['Fallback Deck'];
+    })();
   const playerSlots = Array.from({ length: GAME_CONFIG.maxPlayers }, (_unused, slotIndex) => {
     const player = players.find(candidate => candidate.characterIndex === slotIndex) ?? null;
 
@@ -197,19 +210,15 @@ export function RoomView() {
     };
   });
 
-  const toggleSelection = (
-    value: string,
-    isSelected: boolean,
-    setSelected: Dispatch<SetStateAction<string[]>>
-  ) => {
+  const toggleSelection = (value: string, isSelected: boolean) => {
     if (soundEffectsEnabled) {
       playSelectionDing();
     }
 
-    setSelected(current =>
+    setSelectedPolymarketCategories(
       isSelected
-        ? current.filter(item => item !== value)
-        : [...current, value]
+        ? selectedPolymarketCategories.filter(item => item !== value)
+        : [...selectedPolymarketCategories, value]
     );
   };
 
@@ -247,6 +256,23 @@ export function RoomView() {
   }, [friendGroupPackSettings.includeNames, hasMultiplePlayers]);
 
   useEffect(() => {
+    if (!isFriendGroupMode) {
+      return;
+    }
+
+    if (selectedPolymarketCategories.length === 0 && selectedCustomPacks.length === 0) {
+      return;
+    }
+
+    clearSelectedMaterials();
+  }, [
+    clearSelectedMaterials,
+    isFriendGroupMode,
+    selectedCustomPacks.length,
+    selectedPolymarketCategories.length,
+  ]);
+
+  useEffect(() => {
     if (!pendingFriendGroupPackDraft) {
       setDismissedFriendPackDraftId(null);
       setIsFriendPackNameModalOpen(false);
@@ -262,6 +288,14 @@ export function RoomView() {
     setFriendPackName(pendingFriendGroupPackDraft.suggestedLabel);
     setIsFriendPackNameModalOpen(true);
   }, [dismissedFriendPackDraftId, pendingFriendGroupPackDraft]);
+
+  useEffect(() => (
+    () => {
+      if (copiedJoinUrlTimeoutRef.current !== null) {
+        window.clearTimeout(copiedJoinUrlTimeoutRef.current);
+      }
+    }
+  ), []);
 
   const handleSaveFriendPack = async () => {
     const trimmedName = friendPackName.trim();
@@ -333,18 +367,65 @@ export function RoomView() {
     }
   };
 
+  const handleCopyJoinUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(JOIN_URL);
+
+      if (copiedJoinUrlTimeoutRef.current !== null) {
+        window.clearTimeout(copiedJoinUrlTimeoutRef.current);
+      }
+
+      setShowCopiedJoinUrl(true);
+      copiedJoinUrlTimeoutRef.current = window.setTimeout(() => {
+        setShowCopiedJoinUrl(false);
+        copiedJoinUrlTimeoutRef.current = null;
+      }, 1600);
+    } catch (error) {
+      console.error('Unable to copy join URL', error);
+    }
+  };
+
   return (
     <HostLayout settingsGearSide="right">
       <div className="relative flex flex-1 flex-col gap-6 overflow-hidden p-8">
-        <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
-          {roomCode.split('').map((char, index) => (
-            <div
-              key={`${char}-${index}`}
-              className="vault-panel flex h-10 w-10 items-center justify-center rounded-lg font-title text-xl tracking-widest text-[#f59e0b]"
-            >
-              {char}
+        <div className="absolute left-4 top-4 z-20 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            {roomCode.split('').map((char, index) => (
+              <div
+                key={`${char}-${index}`}
+                className="vault-panel flex h-10 w-10 items-center justify-center rounded-lg font-title text-xl tracking-widest text-[#f59e0b]"
+              >
+                {char}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 px-1 text-left">
+            <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
+              Join at
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCopyJoinUrl();
+                }}
+                className="font-ui text-sm font-semibold text-[#f7c87b] transition-opacity hover:opacity-80"
+              >
+                {JOIN_URL}
+              </button>
+              {showCopiedJoinUrl && (
+                <motion.span
+                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                  className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-black/70 px-3 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]"
+                >
+                  Copied
+                </motion.span>
+              )}
             </div>
-          ))}
+          </div>
         </div>
 
         <motion.div
@@ -409,13 +490,13 @@ export function RoomView() {
                   <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     <div className="grid grid-cols-2 gap-2">
                       {POLYMARKET_CATEGORIES.map(category => {
-                        const isSelected = selectedPolymarket.includes(category.tag);
+                        const isSelected = selectedPolymarketCategories.includes(category.tag);
 
                         return (
                           <button
                             key={category.tag}
                             type="button"
-                            onClick={() => toggleSelection(category.tag, isSelected, setSelectedPolymarket)}
+                            onClick={() => toggleSelection(category.tag, isSelected)}
                             className={`rounded-full border px-3 py-2 text-left font-ui text-sm transition-colors ${
                               isSelected
                                 ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
@@ -443,7 +524,7 @@ export function RoomView() {
                       Coursework
                     </h3>
                     <p className="mt-1 font-ui text-sm text-gray-400">
-                      Study with R.A.C.O.O.N. to steal the show!
+                      Study with R.A.C.C.O.O.N. to steal the show!
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
@@ -669,7 +750,7 @@ export function RoomView() {
                       Misc Scraps
                     </h3>
                     <p className="mt-1 font-ui text-sm text-gray-400">
-                      Our expert R.A.C.O.O.Ns will sift transform your scraps to find treasure.
+                      Our expert R.A.C.C.O.O.Ns will sift transform your scraps to find treasure.
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
@@ -691,7 +772,7 @@ export function RoomView() {
             initial={{ x: 20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="grid flex-1 grid-cols-4 grid-rows-2 gap-x-3 gap-y-[0.45rem] overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
+            className="grid flex-1 content-center grid-cols-4 grid-rows-[repeat(2,auto)] gap-x-3 gap-y-[70px] overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
           >
             {playerSlots.map(({ key, player, characterIndex }, slotIndex) => {
               const isClickableDevSlot = isDevMode && !player;
@@ -706,7 +787,7 @@ export function RoomView() {
                     }
                   }}
                   disabled={!isClickableDevSlot}
-                  className={`flex h-52 items-end justify-center rounded-2xl transition-colors ${
+                  className={`flex h-40 items-center justify-center rounded-2xl pb-4 -translate-y-[30px] transition-colors ${
                     isClickableDevSlot
                       ? 'cursor-pointer hover:bg-white/5'
                       : 'cursor-default'
@@ -735,7 +816,7 @@ export function RoomView() {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="pointer-events-none absolute bottom-8 left-1/2 z-20 -translate-x-1/2"
+          className="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex justify-center"
         >
           <button
             onClick={() => {
@@ -743,7 +824,7 @@ export function RoomView() {
                 setFriendPackError(null);
                 void startGame({
                   friendGroupPack: friendGroupPackSettings,
-                  polymarketCategories: selectedPolymarket,
+                  polymarketCategories: selectedPolymarketCategories,
                   customQuestions: selectedCustomQuestions,
                   playerNames: players.map(player => player.name).filter(Boolean),
                   playerIds: players.map(player => player.id),
@@ -753,7 +834,7 @@ export function RoomView() {
               }
 
               void startGame({
-                polymarketCategories: selectedPolymarket,
+                polymarketCategories: selectedPolymarketCategories,
                 customQuestions: selectedCustomQuestions,
               });
             }}

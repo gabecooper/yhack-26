@@ -117,6 +117,7 @@ export interface GameState {
   roomCode: string;
   phase: GamePhase;
   players: PlayerState[];
+  selectedPolymarketCategories: string[];
   questionDeck: Question[];
   profileAssignments: Record<string, Question[]>;
   profileResponses: Record<string, ProfileResponseValue[]>;

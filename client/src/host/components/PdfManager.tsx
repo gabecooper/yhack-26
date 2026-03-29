@@ -9,15 +9,20 @@ import {
 import { extractTextFromCustomPackFile } from '@/services/customPackFileText';
 import { generateCustomPackQuestionsDetailed } from '@/services/customPackQuestionGeneration';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
-import { playSelectionDing } from '@/shared/services/selectionDing';
 import type { CustomQuestionPack } from '@/types/game';
+import {
+  getEmptyDocumentWarning,
+  getFallbackGenerationError,
+  getFallbackPackWarning,
+  getPackGenerationStatusMessage,
+  SAVED_PACK_PILL_CLASS,
+  SavedPackPills,
+  shouldConfirmEmptyDocument,
+} from './packManagerShared';
 
 interface PdfManagerProps {
   packs: CustomQuestionPack[];
 }
-
-const COURSEWORK_PILL_CLASS =
-  'inline-flex min-h-10 items-center justify-center rounded-full border px-3 py-2 font-ui text-sm transition-colors';
 
 const getCourseworkDisplayName = (filename: string) => filename.replace(/\.[^/.]+$/, '');
 
@@ -35,13 +40,6 @@ interface PendingEmptyDocumentConfirmation {
   isLikelyImageOnlyPdf: boolean;
 }
 
-function shouldConfirmEmptyDocument({
-  rawTextLength,
-  isLikelyImageOnlyPdf,
-}: Pick<PendingEmptyDocumentConfirmation, 'rawTextLength' | 'isLikelyImageOnlyPdf'>) {
-  return rawTextLength < 20 || isLikelyImageOnlyPdf;
-}
-
 export function PdfManager({ packs }: PdfManagerProps) {
   const { user } = useAuth();
   const { toggleCustomPack, upsertCustomPack, removeCustomPack } = useGameActions();
@@ -54,6 +52,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
   const [pendingEmptyDocumentConfirmation, setPendingEmptyDocumentConfirmation] =
     useState<PendingEmptyDocumentConfirmation | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const pendingDeletePack = packs.find(pack => pack.id === pendingDeletePackId) ?? null;
@@ -62,16 +61,11 @@ export function PdfManager({ packs }: PdfManagerProps) {
     if (!user) {
       setErrorMessage('Sign in to save and equip coursework packs.');
       setStatusMessage(null);
+      setWarningMessage(null);
       return;
     }
 
-    setStatusMessage(
-      pendingUpload.exceededLimit
-        ? `Generating questions for ${pendingUpload.label} from sampled sections of the converted text...`
-        : pendingUpload.wasConvertedFromPdf
-          ? `Converted ${pendingUpload.label} to text. Generating questions...`
-          : `Generating questions for ${pendingUpload.label}...`
-    );
+    setStatusMessage(getPackGenerationStatusMessage(pendingUpload));
 
     const generationResult = await generateCustomPackQuestionsDetailed({
       filename: pendingUpload.convertedFilename,
@@ -90,11 +84,26 @@ export function PdfManager({ packs }: PdfManagerProps) {
 
     upsertCustomPack({ ...savedPack, enabled: true });
     setStatusMessage(null);
+    setWarningMessage(
+      shouldConfirmEmptyDocument(pendingUpload) || generationResult.debug.strategy === 'fallback-short-input'
+        ? getFallbackPackWarning(pendingUpload.label)
+        : null
+    );
+    setErrorMessage(
+      generationResult.debug.strategy === 'fallback-invalid-response'
+      || generationResult.debug.strategy === 'fallback-request-error'
+        ? getFallbackGenerationError(
+          pendingUpload.label,
+          generationResult.debug.fallbackReason
+        )
+        : null
+    );
   };
 
   const handleUploadClick = () => {
     setErrorMessage(null);
     setStatusMessage(null);
+    setWarningMessage(null);
     inputRef.current?.click();
   };
 
@@ -120,6 +129,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
 
     setIsUploading(true);
     setErrorMessage(null);
+    setWarningMessage(null);
     setProcessingLabel(getCourseworkDisplayName(file.name));
 
     try {
@@ -133,6 +143,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
       if (shouldConfirmEmptyDocument(pendingUpload)) {
         setPendingEmptyDocumentConfirmation(pendingUpload);
         setStatusMessage(null);
+        setWarningMessage(getEmptyDocumentWarning(pendingUpload.label));
         return;
       }
 
@@ -155,6 +166,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
 
     setIsUploading(true);
     setErrorMessage(null);
+    setWarningMessage(getEmptyDocumentWarning(pendingEmptyDocumentConfirmation.label));
     setProcessingLabel(pendingEmptyDocumentConfirmation.label);
 
     try {
@@ -197,57 +209,18 @@ export function PdfManager({ packs }: PdfManagerProps) {
 
   return (
     <div className="space-y-3">
-      {packs.length > 0 && (
-        <div className="space-y-2">
-          <p className="font-ui text-xs font-semibold uppercase tracking-[0.24em] text-white/45">
-            Saved Packs
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {packs.map(pack => {
-              const isDeleting = deletingPackId === pack.id;
-
-              return (
-                <div key={pack.id} className="group relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (soundEffectsEnabled) {
-                        playSelectionDing();
-                      }
-
-                      toggleCustomPack(pack.id, !pack.enabled);
-                    }}
-                    disabled={isDeleting}
-                    aria-pressed={pack.enabled}
-                    className={`${COURSEWORK_PILL_CLASS} group-hover:pr-9 transition-[padding,color,border-color,background-color,opacity] duration-200 ${
-                      pack.enabled
-                        ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
-                        : 'border-white/15 text-white/85 hover:border-white/35 hover:bg-white/5'
-                    } ${isDeleting ? 'cursor-wait opacity-60' : ''}`}
-                  >
-                    {getCourseworkDisplayName(pack.filename)}
-                  </button>
-
-                  <button
-                    type="button"
-                    aria-label={`Delete ${getCourseworkDisplayName(pack.filename)}`}
-                    onClick={event => {
-                      event.stopPropagation();
-                      setErrorMessage(null);
-                      setStatusMessage(null);
-                      setPendingDeletePackId(pack.id);
-                    }}
-                    disabled={isDeleting}
-                    className="pointer-events-none invisible absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/35 font-ui text-xs font-bold uppercase text-white/70 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 hover:border-white/25 hover:bg-black/55 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    x
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <SavedPackPills
+        packs={packs}
+        deletingPackId={deletingPackId}
+        getDisplayName={pack => getCourseworkDisplayName(pack.filename)}
+        onRequestDelete={packId => {
+          setErrorMessage(null);
+          setStatusMessage(null);
+          setPendingDeletePackId(packId);
+        }}
+        onToggle={toggleCustomPack}
+        soundEffectsEnabled={soundEffectsEnabled}
+      />
 
       <button
         type="button"
@@ -284,6 +257,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
                 if (!isUploading) {
                   setPendingEmptyDocumentConfirmation(null);
                   setStatusMessage(null);
+                  setWarningMessage(getEmptyDocumentWarning(pendingEmptyDocumentConfirmation.label));
                 }
               }}
             />
@@ -318,6 +292,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
                   onClick={() => {
                     setPendingEmptyDocumentConfirmation(null);
                     setStatusMessage(null);
+                    setWarningMessage(getEmptyDocumentWarning(pendingEmptyDocumentConfirmation.label));
                   }}
                   disabled={isUploading}
                   className="flex-1 rounded-full border border-white/10 bg-white/5 px-4 py-3 font-ui text-sm font-semibold uppercase tracking-[0.18em] text-white/82 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
@@ -388,7 +363,7 @@ export function PdfManager({ packs }: PdfManagerProps) {
 
       {isUploading && processingLabel && (
         <div className="flex flex-wrap gap-2">
-          <div className={`${COURSEWORK_PILL_CLASS} relative overflow-hidden border-white/15 bg-white/5 px-4 text-white/72`}>
+          <div className={`${SAVED_PACK_PILL_CLASS} relative overflow-hidden border-white/15 bg-white/5 px-4 text-white/72`}>
             <span className="relative block text-transparent">
               {processingLabel}
             </span>
@@ -418,6 +393,12 @@ export function PdfManager({ packs }: PdfManagerProps) {
       {!isUploading && statusMessage && (
         <p className="rounded-[1rem] border border-vault-green/20 bg-vault-green/10 px-4 py-3 font-ui text-sm text-white/82">
           {statusMessage}
+        </p>
+      )}
+
+      {warningMessage && (
+        <p className="rounded-[1rem] border border-vault-gold/20 bg-vault-gold/10 px-4 py-3 font-ui text-sm text-white/82">
+          {warningMessage}
         </p>
       )}
 

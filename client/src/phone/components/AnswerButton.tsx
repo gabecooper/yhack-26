@@ -14,24 +14,28 @@ export function AnswerButton({ index, label, onSelect, disabled = false, selecte
 
   return (
     <motion.button
+      type="button"
+      data-button-click-sound="accent"
       whileTap={disabled ? {} : { scale: 0.95 }}
       onClick={onSelect}
       disabled={disabled}
-      className="flex w-full items-center gap-4 rounded-[1.6rem] border border-white/12 bg-black/20 px-5 py-4 text-left transition-all active:opacity-90 disabled:opacity-50"
+      aria-pressed={selected}
+      className="flex w-full items-center gap-3 rounded-[1.35rem] border border-white/10 bg-black/18 px-4 py-4 text-left text-white transition-[transform,border-color,background-color,opacity] active:opacity-90 disabled:cursor-not-allowed"
       style={{
-        borderColor: selected ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.12)',
+        borderColor: selected ? 'rgba(214, 158, 46, 0.82)' : 'rgba(255,255,255,0.1)',
         opacity: disabled && !selected ? 0.5 : 1,
-        boxShadow: '0 16px 34px rgba(0, 0, 0, 0.18)',
-        backdropFilter: 'blur(16px)',
+        backgroundColor: selected ? 'rgba(214, 158, 46, 0.12)' : 'rgba(0, 0, 0, 0.18)',
+        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.18)',
+        backdropFilter: 'blur(14px)',
       }}
     >
       <span
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-title text-2xl text-white"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full font-title text-[1.65rem] leading-none text-white"
         style={{ backgroundColor: color.bg }}
       >
         {color.label}
       </span>
-      <span className="font-ui text-lg font-semibold leading-tight text-white">
+      <span className="font-ui text-[1.05rem] font-semibold leading-tight text-white">
         {label}
       </span>
     </motion.button>

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import { playAudioWithRetry, stopAudioPlayback } from '@/shared/services/audioPlayback';
 
 interface UseLoopingAudioOptions {
   enabled: boolean;
@@ -12,8 +13,9 @@ export function useLoopingAudio({
   volume = 0.5,
 }: UseLoopingAudioOptions) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopRetryRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof Audio === 'undefined') {
       return;
     }
@@ -25,13 +27,14 @@ export function useLoopingAudio({
     audioRef.current = audio;
 
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(audio);
       audioRef.current = null;
     };
   }, [src, volume]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const audio = audioRef.current;
 
     if (!audio) {
@@ -39,20 +42,29 @@ export function useLoopingAudio({
     }
 
     audio.volume = volume;
+  }, [src, volume]);
 
-    if (!enabled) {
-      audio.pause();
-      audio.currentTime = 0;
+  useLayoutEffect(() => {
+    const audio = audioRef.current;
+
+    if (!audio) {
       return;
     }
 
-    void audio.play().catch(() => {
-      // Ignore autoplay restrictions until the next user interaction.
-    });
+    stopRetryRef.current?.();
+    stopRetryRef.current = null;
+
+    if (!enabled) {
+      stopAudioPlayback(audio);
+      return;
+    }
+
+    stopRetryRef.current = playAudioWithRetry(audio);
 
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(audio);
     };
-  }, [enabled, volume]);
+  }, [enabled, src]);
 }

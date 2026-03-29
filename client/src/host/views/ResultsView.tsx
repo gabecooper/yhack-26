@@ -7,7 +7,6 @@ import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
 import {
   getRandomPresetQuip,
-  getSpecialQuip,
   type QuipOutcome,
 } from '@/services/resultsQuips';
 import {
@@ -53,6 +52,7 @@ export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();
   const { advancePhase } = useGameActions();
   const { soundEffectsEnabled } = useAudioSettings();
+  const currentQuestionId = currentQuestion?.id ?? null;
   const activePlayers = players.filter(p => !p.isEliminated);
   const correctPlayers = activePlayers.filter(
     p => results && results.playerAnswers[p.id] === results.correctIndex
@@ -73,27 +73,16 @@ export function ResultsView() {
     () => quipCandidates.map(player => player.id).join('::'),
     [quipCandidates]
   );
-  const [targetQuipPlayerId, setTargetQuipPlayerId] = useState<string | null>(null);
-  const [presetResultsQuip, setPresetResultsQuip] = useState('');
   const [resultsQuip, setResultsQuip] = useState('');
   const [isQuipReady, setIsQuipReady] = useState(true);
-  const [shouldFetchSpecialQuip, setShouldFetchSpecialQuip] = useState(false);
   const resultsEnteredAtRef = useRef(Date.now());
-  const previousResultsQuipRef = useRef<string | null>(null);
-
-  const targetQuipPlayer = useMemo(
-    () => quipCandidates.find(player => player.id === targetQuipPlayerId) ?? null,
-    [quipCandidates, targetQuipPlayerId]
-  );
+  const previousQuipTemplateRef = useRef<string | null>(null);
 
   useEffect(() => {
     resultsEnteredAtRef.current = Date.now();
 
     if (!currentQuestion) {
-      setTargetQuipPlayerId(null);
-      setPresetResultsQuip('');
       setResultsQuip('');
-      setShouldFetchSpecialQuip(false);
       setIsQuipReady(false);
       return;
     }
@@ -101,99 +90,34 @@ export function ResultsView() {
     const chosenPlayer = pickRandomItem(quipCandidates);
 
     if (!chosenPlayer) {
-      setTargetQuipPlayerId(null);
-      setPresetResultsQuip('');
       setResultsQuip('');
-      setShouldFetchSpecialQuip(false);
       setIsQuipReady(true);
       return;
     }
 
-    const nextQuip = getRandomPresetQuip({
+    const { template, quip } = getRandomPresetQuip({
       playerName: chosenPlayer.name,
       outcome: quipOutcome,
-      excluding: previousResultsQuipRef.current,
-    });
-    const useSpecialQuip = Math.random() < (1 / 3);
-
-    setTargetQuipPlayerId(chosenPlayer.id);
-    setPresetResultsQuip(nextQuip);
-    setResultsQuip(nextQuip);
-    setShouldFetchSpecialQuip(useSpecialQuip);
-    setIsQuipReady(!useSpecialQuip);
-    previousResultsQuipRef.current = nextQuip;
-  }, [currentQuestion?.id, quipCandidateIds, quipOutcome]);
-
-  useEffect(() => {
-    if (!currentQuestion) {
-      setPresetResultsQuip('');
-      setResultsQuip('');
-      setIsQuipReady(false);
-      return;
-    }
-
-    if (!targetQuipPlayer) {
-      setPresetResultsQuip('');
-      setResultsQuip('');
-      setIsQuipReady(true);
-      return;
-    }
-
-    let isCancelled = false;
-    if (!shouldFetchSpecialQuip) {
-      setResultsQuip(presetResultsQuip);
-      setIsQuipReady(true);
-      return;
-    }
-
-    setIsQuipReady(false);
-
-    void getSpecialQuip({
-      questionId: currentQuestion.id,
-      playerName: targetQuipPlayer.name,
-      outcome: quipOutcome,
-      category: currentQuestion.category,
-      question: currentQuestion.question,
-      correctAnswer,
-    }).then(quip => {
-      if (!isCancelled) {
-        setResultsQuip(quip);
-        previousResultsQuipRef.current = quip;
-        setIsQuipReady(true);
-      }
-    }).catch(error => {
-      console.warn('Unable to load special wrong quip', error);
-      if (!isCancelled) {
-        setResultsQuip(presetResultsQuip);
-        previousResultsQuipRef.current = presetResultsQuip;
-        setIsQuipReady(true);
-      }
+      excludingTemplate: previousQuipTemplateRef.current,
     });
 
-    return () => {
-      isCancelled = true;
-    };
-  }, [
-    correctAnswer,
-    currentQuestion,
-    presetResultsQuip,
-    quipOutcome,
-    shouldFetchSpecialQuip,
-    targetQuipPlayer,
-  ]);
+    setResultsQuip(quip);
+    setIsQuipReady(Boolean(quip));
+    previousQuipTemplateRef.current = template;
+  }, [currentQuestionId, quipCandidateIds, quipOutcome]);
 
   useEffect(() => {
-    if (!currentQuestion || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
+    if (!currentQuestionId || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
       return;
     }
 
-    void getNarrationAudioUrl(`results-quip:${currentQuestion.id}`, resultsQuip).catch(error => {
+    void getNarrationAudioUrl(`results-quip:${currentQuestionId}`, resultsQuip).catch(error => {
       console.warn('Unable to prewarm results narration', error);
     });
-  }, [currentQuestion, isQuipReady, resultsQuip, soundEffectsEnabled]);
+  }, [currentQuestionId, isQuipReady, resultsQuip, soundEffectsEnabled]);
 
   useEffect(() => {
-    if (!currentQuestion || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
+    if (!currentQuestionId || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
       stopNarration();
       return;
     }
@@ -201,14 +125,14 @@ export function ResultsView() {
     const elapsedMs = Date.now() - resultsEnteredAtRef.current;
     const delayMs = Math.max(0, 2000 - elapsedMs);
     const timeoutId = window.setTimeout(() => {
-      void playNarration(`results-quip:${currentQuestion.id}`, resultsQuip);
+      void playNarration(`results-quip:${currentQuestionId}`, resultsQuip);
     }, delayMs);
 
     return () => {
       window.clearTimeout(timeoutId);
       stopNarration();
     };
-  }, [currentQuestion, isQuipReady, resultsQuip, soundEffectsEnabled]);
+  }, [currentQuestionId, isQuipReady, resultsQuip, soundEffectsEnabled]);
 
   if (!currentQuestion || !results) return null;
 

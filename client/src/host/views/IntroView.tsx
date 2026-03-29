@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import { playAudioWithRetry, stopAudioPlayback } from '@/shared/services/audioPlayback';
 import introTutorialAudioSrc from '@/assets/audio/intro-tutorial.mp3';
 
 const INTRO_SEQUENCE_DURATION_SECONDS = 25.715;
@@ -22,18 +23,9 @@ const LINES = [
 export function IntroView() {
   const { preparationMessage } = useGameState();
   const { advancePhase } = useGameActions();
-  const { musicEnabled } = useAudioSettings();
+  const { soundEffectsEnabled } = useAudioSettings();
   const introAudioRef = useRef<HTMLAudioElement | null>(null);
-  const [isSkipping, setIsSkipping] = useState(false);
-
-  const handleSkipIntro = () => {
-    if (isSkipping) {
-      return;
-    }
-
-    setIsSkipping(true);
-    advancePhase();
-  };
+  const stopRetryRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(
@@ -44,7 +36,7 @@ export function IntroView() {
     return () => clearTimeout(timeout);
   }, [advancePhase]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof Audio === 'undefined') {
       return;
     }
@@ -57,35 +49,26 @@ export function IntroView() {
     }
 
     const introAudio = introAudioRef.current;
+    stopRetryRef.current?.();
+    stopRetryRef.current = null;
 
-    if (!musicEnabled) {
-      introAudio.pause();
-      introAudio.currentTime = 0;
+    if (!soundEffectsEnabled) {
+      stopAudioPlayback(introAudio);
       return;
     }
 
-    void introAudio.play().catch(() => {
-      // Browsers can block autoplay until the first interaction.
-    });
+    stopRetryRef.current = playAudioWithRetry(introAudio);
 
     return () => {
-      introAudio.pause();
-      introAudio.currentTime = 0;
+      stopRetryRef.current?.();
+      stopRetryRef.current = null;
+      stopAudioPlayback(introAudio);
     };
-  }, [musicEnabled]);
+  }, [soundEffectsEnabled]);
 
   return (
     <HostLayout>
       <div className="relative flex-1 flex flex-col items-center justify-center gap-6 px-16">
-        <button
-          type="button"
-          onClick={handleSkipIntro}
-          disabled={isSkipping}
-          className="vault-button-secondary absolute left-6 top-6 px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          {isSkipping ? 'Skipping...' : 'Skip Intro'}
-        </button>
-
         <motion.h1
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}

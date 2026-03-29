@@ -59,10 +59,10 @@ export function StartFlowView() {
               Choose Startup Flow
             </p>
             <h1 className="mt-4 font-title text-5xl leading-[0.9] text-vault-gold sm:text-6xl lg:text-7xl">
-              R.A.C.O.O.N.
+              R.A.C.C.O.O.N.
             </h1>
             <p className="mt-4 font-ui text-lg uppercase tracking-[0.16em] text-white/78 [text-wrap:balance]">
-              Risk Arbitrage &amp; Chaotic Odds Ops Network
+              Risk Arbitrage Calibration &amp; Chaotic Odds Ops Network
             </p>
             <p className="mt-6 font-ui text-lg text-white/68">
               Pick the flow you want on launch. Dev keeps the current debug-driven setup. Real starts the app as a player-facing playtest.

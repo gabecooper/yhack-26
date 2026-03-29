@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, Navigate, useLocation } from 'react-router-dom';
+import { getStoredPlayerRoute } from '@/app/sessionRouting';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useAuth } from '../AuthContext';
 
@@ -28,7 +29,7 @@ export function AuthView() {
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: { pathname?: string } } | null;
-    return state?.from?.pathname || '/host';
+    return state?.from?.pathname || getStoredPlayerRoute() || '/real';
   }, [location.state]);
 
   if (!isLoading && user) {
@@ -75,10 +76,10 @@ export function AuthView() {
                 Host Access
               </p>
               <h1 className="mt-4 font-title text-5xl leading-[0.9] text-vault-gold sm:text-6xl">
-                R.A.C.O.O.N.
+                R.A.C.C.O.O.N.
               </h1>
               <p className="mt-4 max-w-xl font-ui text-lg uppercase tracking-[0.16em] text-white/78 [text-wrap:balance]">
-                Risk Arbitrage &amp; Chaotic Odds Ops Network
+                Risk Arbitrage Calibration &amp; Chaotic Odds Ops Network
               </p>
               <p className="mt-6 max-w-2xl font-ui text-lg text-white/68">
                 Sign in before hosting a room. Live Polymarket categories now seed the question deck, while the rest of the game flow keeps the existing vault look and feel.

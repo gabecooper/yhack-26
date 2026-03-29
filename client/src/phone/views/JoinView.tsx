@@ -16,9 +16,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
   const [roomCode, setRoomCode] = useState(() =>
     window.localStorage.getItem(ROOM_CODE_STORAGE_KEY)?.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength) ?? ''
   );
-  const [playerName, setPlayerName] = useState(() =>
-    storedPlayerName
-  );
+  const [playerName, setPlayerName] = useState(() => storedPlayerName);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const { joinRoom } = useGameActions();
@@ -51,26 +49,23 @@ export function JoinView({ onJoin }: JoinViewProps) {
 
   return (
     <PhoneLayout contentClassName="justify-center">
-      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6">
         <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           className="text-center"
         >
-          <p className="font-ui text-xs uppercase tracking-[0.35em] text-white/65">
-            Join The Crew
+          <p className="font-ui text-[11px] uppercase tracking-[0.32em] text-white/58">
+            Phone Controller
           </p>
           <h1 className="mt-3 font-title text-5xl leading-[0.92] text-vault-gold drop-shadow-lg">
-            R.A.C.O.O.N.
+            R.A.C.C.O.O.N.
           </h1>
-          <p className="mt-3 font-ui text-base uppercase tracking-[0.18em] text-white/80 [text-wrap:balance]">
-            Risk Arbitrage &amp; Chaotic Odds Ops Network
-          </p>
-          <p className="mt-5 font-ui text-base text-white/60">
-            Enter the host code and your name to join.
+          <p className="mt-4 font-ui text-sm uppercase tracking-[0.18em] text-white/72 [text-wrap:balance]">
+            Join with the room code from the host screen.
           </p>
           {storedPlayerName && (
-            <p className="mt-2 font-ui text-sm text-white/50">
+            <p className="mt-2 font-ui text-sm text-white/52">
               Re-enter the same code to reclaim your spot as {storedPlayerName}.
             </p>
           )}
@@ -81,7 +76,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.15 }}
           onSubmit={handleSubmit}
-          className="soft-glass-panel mt-8 flex w-full flex-col gap-4 rounded-[2rem] p-5"
+          className="phone-card-strong flex w-full flex-col gap-4 rounded-[1.8rem] p-5"
         >
           <div className="space-y-2">
             <label className="block font-ui text-xs uppercase tracking-[0.24em] text-white/55">
@@ -129,7 +124,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
             type="submit"
             disabled={!canJoin}
             data-button-click-sound="accent"
-            className="minimal-button-primary mt-2 w-full py-4 text-lg"
+            className="minimal-button-primary mt-2 w-full py-4 text-lg text-white"
           >
             {isJoining ? 'Searching...' : 'Join Room'}
           </button>

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useLocation } from 'react-router-dom';
 import { GameContext, type GameActions } from './GameContext';
 import type {
   CustomResponseHistoryItem,
@@ -24,8 +25,11 @@ import type {
 import type { PlayerState } from '@/types/player';
 import { GAME_CONFIG } from '@/constants/gameConfig';
 import { fetchPolymarketQuestionDeck } from '@/services/polymarket/questions';
-import { listCustomQuestionPacks } from '@/services/customQuestionPacks';
-import { fetchFriendGroupCustomPackQuestions } from '@/services/friendGroupCustomPack';
+import { listCustomQuestionPacks, normalizePackQuestions } from '@/services/customQuestionPacks';
+import {
+  buildLocalFriendGroupCustomPackQuestions,
+  fetchFriendGroupCustomPackQuestions,
+} from '@/services/friendGroupCustomPack';
 import { getLocalFriendGroupQuestionSeeds } from '@/services/friendGroupQuestionSeeds';
 import { supabase } from '@/services/supabaseClient';
 import { useAuth } from '@/auth/AuthContext';
@@ -45,10 +49,13 @@ const STORAGE_KEYS = {
 const SNAPSHOT_PREFIX = 'heist_host_snapshot:';
 const JOIN_REQUEST_TIMEOUT_MS = 12000;
 const RESTORE_SYNC_TIMEOUT_MS = 6000;
+const PLAYER_STATE_STALE_AFTER_MS = 7000;
+const RECONNECT_BASE_DELAY_MS = 800;
+const RECONNECT_MAX_DELAY_MS = 5000;
 const HOST_ROOM_CLAIM_RETRIES = 12;
 const HOST_ROOM_CONFLICT_ERROR = 'HOST_ROOM_CONFLICT';
 const DEFAULT_FRIEND_GROUP_PROFILE_QUESTION_COUNT = 3;
-const FRIEND_GROUP_PROFILE_TIMER_SECONDS = 30;
+const FRIEND_GROUP_PROFILE_TIMER_SECONDS = 60;
 const DEFAULT_PROFILE_RESPONSE_MAX_LENGTH = 30;
 const FRIEND_GROUP_PACK_STYLES = new Set<FriendGroupPackStyle>([
   'kid-friendly',
@@ -106,17 +113,37 @@ function pickRandomItem<T>(items: T[]) {
   return items[randomIndex];
 }
 
+function normalizeSelectedPolymarketCategories(categories: string[]) {
+  return Array.from(
+    new Set(categories.map(category => category.trim()).filter(Boolean))
+  );
+}
+
 export function GameProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const location = useLocation();
   const [state, setState] = useState<GameState>(createInitialState);
 
   const stateRef = useRef(state);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const latestReceivedStateSyncAtRef = useRef(0);
+  const channelStatusRef = useRef<'idle' | 'connecting' | 'subscribed'>('idle');
   const isHostRef = useRef(false);
-  const hasRestoredSessionRef = useRef(false);
   const isFinalizingQuestionRef = useRef(false);
+  const isCreatingRoomRef = useRef(false);
   const persistSnapshotTimeoutRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const resumeSessionRef = useRef<(reason: string) => void>(() => {});
+  const activeSessionRef = useRef<{
+    role: 'host' | 'player' | null;
+    roomCode: string | null;
+    playerId: string | null;
+  }>({
+    role: null,
+    roomCode: null,
+    playerId: null,
+  });
   const pendingJoinRef = useRef<{
     playerId: string;
     resolve: (playerId: string | null) => void;
@@ -144,6 +171,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
+  const clearScheduledReconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current !== null) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
   const setLocalState = useCallback((updater: StateUpdater) => {
     setState(previousState => {
       const nextState =
@@ -156,28 +190,71 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const disposeChannel = useCallback(async (channel: RealtimeChannel | null) => {
+    if (!channel || !supabase) {
+      return;
+    }
+
+    try {
+      await channel.untrack();
+    } catch (error) {
+      console.error('Unable to clear Supabase presence', error);
+    }
+
+    try {
+      await supabase.removeChannel(channel);
+    } catch (error) {
+      console.error('Unable to remove Supabase channel', error);
+    }
+  }, []);
+
+  const scheduleReconnect = useCallback((reason: string) => {
+    const activeSession = activeSessionRef.current;
+
+    if (!activeSession.role || !activeSession.roomCode || reconnectTimeoutRef.current !== null) {
+      return;
+    }
+
+    reconnectAttemptRef.current += 1;
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * (2 ** Math.max(0, reconnectAttemptRef.current - 1)),
+      RECONNECT_MAX_DELAY_MS,
+    );
+
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+
+      if (!activeSessionRef.current.role || channelStatusRef.current === 'subscribed') {
+        return;
+      }
+
+      resumeSessionRef.current(reason);
+    }, delay);
+  }, []);
+
   const teardownChannel = useCallback(async () => {
     const activeChannel = channelRef.current;
+    clearScheduledReconnect();
 
-    if (!activeChannel || !supabase) {
+    activeSessionRef.current = {
+      role: null,
+      roomCode: null,
+      playerId: null,
+    };
+    isHostRef.current = false;
+    latestReceivedStateSyncAtRef.current = 0;
+    channelStatusRef.current = 'idle';
+    reconnectAttemptRef.current = 0;
+
+    if (!activeChannel) {
       channelRef.current = null;
       return;
     }
 
     channelRef.current = null;
 
-    try {
-      await activeChannel.untrack();
-    } catch (error) {
-      console.error('Unable to clear Supabase presence', error);
-    }
-
-    try {
-      await supabase.removeChannel(activeChannel);
-    } catch (error) {
-      console.error('Unable to remove Supabase channel', error);
-    }
-  }, []);
+    await disposeChannel(activeChannel);
+  }, [clearScheduledReconnect, disposeChannel]);
 
   const sendBroadcast = useCallback((event: string, payload: Record<string, unknown>) => {
     if (!channelRef.current) {
@@ -490,6 +567,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     await teardownChannel();
     isHostRef.current = options.asHost;
+    latestReceivedStateSyncAtRef.current = 0;
+    channelStatusRef.current = 'connecting';
 
     const channel = client.channel(`heist-room:${roomCode}`, {
       config: {
@@ -519,6 +598,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
         if (incomingSentAt > 0) {
           latestReceivedStateSyncAtRef.current = incomingSentAt;
+        } else {
+          latestReceivedStateSyncAtRef.current = Date.now();
         }
 
         hasReceivedStateSync = true;
@@ -568,8 +649,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     channelRef.current = channel;
 
     await new Promise<void>((resolve, reject) => {
+      let hasResolved = false;
+
       channel.subscribe(async (status, error) => {
+        if (channelRef.current !== channel) {
+          return;
+        }
+
         if (status === 'SUBSCRIBED') {
+          clearScheduledReconnect();
+          reconnectAttemptRef.current = 0;
+          channelStatusRef.current = 'subscribed';
           const presencePayload =
             options.asHost
               ? { role: 'host' }
@@ -643,17 +733,49 @@ export function GameProvider({ children }: { children: ReactNode }) {
             }
           }
 
+          activeSessionRef.current = {
+            role: options.asHost ? 'host' : 'player',
+            roomCode,
+            playerId: options.playerId ?? null,
+          };
+
+          hasResolved = true;
           resolve();
           return;
         }
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          channelStatusRef.current = 'idle';
+          channelRef.current = null;
+
+          if (hasResolved) {
+            void disposeChannel(channel);
+            scheduleReconnect(status.toLowerCase());
+            return;
+          }
+
+          reject(error ?? new Error(`Supabase realtime channel failed with status ${status}`));
+          return;
+        }
+
+        if (status === 'CLOSED') {
+          channelStatusRef.current = 'idle';
+          channelRef.current = null;
+
+          if (hasResolved) {
+            void disposeChannel(channel);
+            scheduleReconnect('closed');
+            return;
+          }
+
           reject(error ?? new Error(`Supabase realtime channel failed with status ${status}`));
         }
       });
     });
   }, [
     broadcastSnapshot,
+    clearScheduledReconnect,
+    disposeChannel,
     handleAnswerSubmission,
     handleJoinRequest,
     handleLeaveMessage,
@@ -662,30 +784,68 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setLocalState,
     syncPresenceToHostState,
     teardownChannel,
+    scheduleReconnect,
   ]);
 
-  useEffect(() => {
-    if (hasRestoredSessionRef.current || !supabase) {
+  const resetToLocalIdleState = useCallback(() => {
+    setLocalState(previousState => (
+      previousState.roomCode || previousState.phase !== 'home' || previousState.players.length > 0
+        ? createInitialState()
+        : previousState
+    ));
+  }, [setLocalState]);
+
+  const syncSessionToRoute = useCallback((forceReconnect = false) => {
+    if (!supabase) {
       return;
     }
 
+    const routeRole =
+      location.pathname.startsWith('/host')
+        ? 'host'
+        : location.pathname.startsWith('/play')
+          ? 'player'
+          : 'neutral';
     const storedRoomCode = window.localStorage.getItem(STORAGE_KEYS.roomCode);
-
-    if (!storedRoomCode) {
-      hasRestoredSessionRef.current = true;
-      return;
-    }
-
     const hostRoomCode = window.localStorage.getItem(STORAGE_KEYS.hostRoomCode);
     const storedPlayerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
     const storedPlayerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
+    const activeSession = activeSessionRef.current;
+    const hasLiveChannel = channelStatusRef.current === 'subscribed' && channelRef.current !== null;
 
-    if (hostRoomCode === storedRoomCode) {
-      if (!user) {
+    if (routeRole === 'host') {
+      if (activeSession.role === 'player') {
+        void teardownChannel();
+        resetToLocalIdleState();
         return;
       }
 
-      hasRestoredSessionRef.current = true;
+      if (!storedRoomCode || hostRoomCode !== storedRoomCode) {
+        if (activeSession.role === 'host') {
+          void teardownChannel();
+        }
+
+        resetToLocalIdleState();
+        return;
+      }
+
+      if (!user) {
+        if (activeSession.role === 'host') {
+          void teardownChannel();
+          resetToLocalIdleState();
+        }
+        return;
+      }
+
+      if (
+        !forceReconnect
+        && hasLiveChannel
+        && activeSession.role === 'host'
+        && activeSession.roomCode === storedRoomCode
+      ) {
+        return;
+      }
+
       void subscribeToRoom(storedRoomCode, {
         asHost: true,
         presenceKey: createHostPresenceKey(user.id),
@@ -693,14 +853,58 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    hasRestoredSessionRef.current = true;
-    void subscribeToRoom(storedRoomCode, {
-      asHost: false,
-      presenceKey: storedPlayerId ?? crypto.randomUUID(),
-      playerId: storedPlayerId ?? undefined,
-      playerName: storedPlayerName || undefined,
-    });
-  }, [subscribeToRoom, user]);
+    if (routeRole === 'player') {
+      if (hostRoomCode === storedRoomCode) {
+        if (activeSession.role === 'host') {
+          void teardownChannel();
+        }
+        resetToLocalIdleState();
+        return;
+      }
+
+      if (!storedRoomCode || !storedPlayerId || !storedPlayerName) {
+        if (activeSession.role !== null) {
+          void teardownChannel();
+        }
+        resetToLocalIdleState();
+        return;
+      }
+
+      if (
+        !forceReconnect
+        && hasLiveChannel
+        && activeSession.role === 'player'
+        && activeSession.roomCode === storedRoomCode
+        && activeSession.playerId === storedPlayerId
+      ) {
+        return;
+      }
+
+      void subscribeToRoom(storedRoomCode, {
+        asHost: false,
+        presenceKey: storedPlayerId,
+        playerId: storedPlayerId,
+        playerName: storedPlayerName,
+      });
+      return;
+    }
+
+    if (activeSession.role !== null) {
+      void teardownChannel();
+    }
+
+    resetToLocalIdleState();
+  }, [location.pathname, resetToLocalIdleState, subscribeToRoom, teardownChannel, user]);
+
+  useEffect(() => {
+    resumeSessionRef.current = () => {
+      syncSessionToRoute(true);
+    };
+  }, [syncSessionToRoute]);
+
+  useEffect(() => {
+    syncSessionToRoute();
+  }, [syncSessionToRoute]);
 
   useEffect(() => {
     if (!user || !supabase) {
@@ -721,7 +925,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
         setLocalState(previousState => ({
           ...previousState,
-          customPacks: resetCustomPackSelections(packs),
+          customPacks: mergeCustomPackSelections(previousState.customPacks, packs),
         }));
       })
       .catch(error => {
@@ -780,6 +984,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
 
     const requestLatestState = () => {
+      if (
+        latestReceivedStateSyncAtRef.current > 0
+        && Date.now() - latestReceivedStateSyncAtRef.current > PLAYER_STATE_STALE_AFTER_MS
+      ) {
+        channelStatusRef.current = 'idle';
+
+        if (channelRef.current) {
+          const staleChannel = channelRef.current;
+          channelRef.current = null;
+          void disposeChannel(staleChannel);
+        }
+
+        scheduleReconnect('state-stale');
+        return;
+      }
+
       const storedPlayerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
       const storedPlayerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
       const shouldReassertPlayer = Boolean(
@@ -810,10 +1030,35 @@ export function GameProvider({ children }: { children: ReactNode }) {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [sendBroadcast, sendJoinHandshake, state.players, state.roomCode]);
+  }, [disposeChannel, scheduleReconnect, sendBroadcast, sendJoinHandshake, state.players, state.roomCode]);
+
+  useEffect(() => {
+    const resumeIfNeeded = () => {
+      if (document.hidden || (channelStatusRef.current === 'subscribed' && channelRef.current)) {
+        return;
+      }
+
+      syncSessionToRoute(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        resumeIfNeeded();
+      }
+    };
+
+    window.addEventListener('online', resumeIfNeeded);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('online', resumeIfNeeded);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [syncSessionToRoute]);
 
   useEffect(() => {
     return () => {
+      clearScheduledReconnect();
       if (persistSnapshotTimeoutRef.current !== null) {
         window.clearTimeout(persistSnapshotTimeoutRef.current);
       }
@@ -827,40 +1072,59 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
       void teardownChannel();
     };
-  }, [teardownChannel]);
+  }, [clearScheduledReconnect, teardownChannel]);
 
   const createRoom = useCallback(async () => {
-    if (!supabase || !user) {
+    if (!supabase || !user || isCreatingRoomRef.current) {
       return;
     }
 
-    for (let attempt = 0; attempt < HOST_ROOM_CLAIM_RETRIES; attempt += 1) {
-      const roomCode = generateRoomCode();
-      const initialState = {
-        ...createRealtimeRoomState(roomCode),
-        pdfs: resetPdfSelections(stateRef.current.pdfs),
-        customPacks: resetCustomPackSelections(stateRef.current.customPacks),
-      };
+    isCreatingRoomRef.current = true;
+    const previousState = stateRef.current;
+    const previousStoredRoomCode = window.localStorage.getItem(STORAGE_KEYS.roomCode);
+    const previousStoredHostRoomCode = window.localStorage.getItem(STORAGE_KEYS.hostRoomCode);
 
-      try {
-        await subscribeToRoom(roomCode, {
-          asHost: true,
-          presenceKey: createHostPresenceKey(user.id),
-          initialState,
-          rejectIfOccupiedByHost: true,
-        });
-        return;
-      } catch (error) {
-        if (error instanceof Error && error.message === HOST_ROOM_CONFLICT_ERROR) {
-          continue;
+    try {
+      for (let attempt = 0; attempt < HOST_ROOM_CLAIM_RETRIES; attempt += 1) {
+        const roomCode = generateRoomCode();
+        const initialState = {
+          ...createRealtimeRoomState(roomCode),
+          pdfs: resetPdfSelections(previousState.pdfs),
+          customPacks: resetCustomPackSelections(previousState.customPacks),
+        };
+
+        window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
+        window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
+        setLocalState(initialState);
+
+        try {
+          await subscribeToRoom(roomCode, {
+            asHost: true,
+            presenceKey: createHostPresenceKey(user.id),
+            initialState,
+            rejectIfOccupiedByHost: true,
+          });
+          return;
+        } catch (error) {
+          if (error instanceof Error && error.message === HOST_ROOM_CONFLICT_ERROR) {
+            continue;
+          }
+
+          throw error;
         }
-
-        console.error('Unable to subscribe host room', error);
-        return;
       }
-    }
 
-    console.error('Unable to claim a unique realtime room code after multiple attempts');
+      console.error('Unable to claim a unique realtime room code after multiple attempts');
+    } catch (error) {
+      console.error('Unable to subscribe host room', error);
+    } finally {
+      if (activeSessionRef.current.role !== 'host') {
+        restoreStoredRoomSession(previousStoredRoomCode, previousStoredHostRoomCode);
+        setLocalState(previousState);
+      }
+
+      isCreatingRoomRef.current = false;
+    }
   }, [subscribeToRoom, supabase, user]);
 
   const joinRoom = useCallback(async (roomCode: string, playerName: string): Promise<string | null> => {
@@ -1006,6 +1270,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
         : createQuestionPhaseState(baseStartedState, 0);
     }, 'start-game:ready');
   }, [commitHostState]);
+
+  const setSelectedPolymarketCategories = useCallback((categories: string[]) => {
+    const nextCategories = normalizeSelectedPolymarketCategories(categories);
+
+    updateResourceState(previousState => ({
+      ...previousState,
+      selectedPolymarketCategories: nextCategories,
+    }), 'polymarket-categories-selected');
+  }, [updateResourceState]);
+
+  const clearSelectedMaterials = useCallback(() => {
+    updateResourceState(previousState => ({
+      ...previousState,
+      selectedPolymarketCategories: [],
+      pdfs: resetPdfSelections(previousState.pdfs),
+      customPacks: resetCustomPackSelections(previousState.customPacks),
+    }), 'selected-materials-cleared');
+  }, [updateResourceState]);
 
   const simulateDevPlayerJoin = useCallback((characterIndex: number) => {
     if (import.meta.env.PROD || !isHostRef.current) {
@@ -1281,6 +1563,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     startGame,
+    setSelectedPolymarketCategories,
+    clearSelectedMaterials,
     simulateDevPlayerJoin,
     submitAnswer,
     submitMinigameAnswer,
@@ -1303,6 +1587,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     startGame,
+    setSelectedPolymarketCategories,
+    clearSelectedMaterials,
     simulateDevPlayerJoin,
     submitAnswer,
     submitMinigameAnswer,
@@ -1468,7 +1754,8 @@ async function buildQuestionDeck(options: GameStartOptions) {
   const selectedCategories = Array.from(
     new Set((options.polymarketCategories ?? []).map(category => category.trim()).filter(Boolean))
   );
-  const selectedCustomQuestions = (options.customQuestions ?? []).slice(0, gameplayQuestionCount);
+  const selectedCustomQuestions = normalizePackQuestions(options.customQuestions ?? [])
+    .slice(0, gameplayQuestionCount);
 
   if (selectedCategories.length === 0 && selectedCustomQuestions.length === 0) {
     if (!options.friendGroupPack) {
@@ -1843,69 +2130,38 @@ function buildSavedFriendGroupPackQuestions(
 ) {
   const uniqueQuestions: Question[] = [];
   const usedSignatures = new Set<string>();
-  const uniqueAttemptLimit = Math.max(settings.numQuestions * 10, 20);
   const profileQuestionCount = getFriendGroupProfileQuestionCount(settings);
-  let attempts = 0;
+  const followUpCandidates = buildFriendGroupFollowUpQuestionCandidates(previousState, profileQuestionCount);
+  const fallbackQuestions = buildLocalFriendGroupCustomPackQuestions({
+    style: settings.style,
+    // Generic local prompts are safer than saving fewer questions.
+    includeNames: false,
+  });
 
-  while (uniqueQuestions.length < settings.numQuestions && attempts < uniqueAttemptLimit) {
-    const nextQuestion = buildFriendGroupFollowUpQuestion(previousState, profileQuestionCount + attempts);
-    attempts += 1;
-
-    if (!nextQuestion) {
-      break;
-    }
-
-    const signature = [
-      nextQuestion.question.trim().toLowerCase(),
-      nextQuestion.correct,
-      ...nextQuestion.choices.map(choice => choice.trim().toLowerCase()),
-    ].join('::');
-
-    if (usedSignatures.has(signature)) {
-      continue;
+  [...followUpCandidates, ...fallbackQuestions].forEach(candidate => {
+    if (uniqueQuestions.length >= settings.numQuestions) {
+      return;
     }
 
     if (
       !settings.includeNames
-      && questionUsesPlayerNamesOnlyInChoices(nextQuestion, previousState.players)
+      && questionUsesPlayerNamesOnlyInChoices(candidate, previousState.players)
     ) {
-      continue;
+      return;
     }
 
-    usedSignatures.add(signature);
-    uniqueQuestions.push(sanitizeSavedFriendGroupQuestion(nextQuestion, settings.style, uniqueQuestions.length));
-  }
-
-  while (uniqueQuestions.length < settings.numQuestions) {
-    const nextQuestion = buildFriendGroupFollowUpQuestion(
-      previousState,
-      profileQuestionCount + uniqueQuestions.length + attempts
-    );
-    attempts += 1;
-
-    if (!nextQuestion) {
-      break;
-    }
-
-    const signature = [
-      nextQuestion.question.trim().toLowerCase(),
-      nextQuestion.correct,
-      ...nextQuestion.choices.map(choice => choice.trim().toLowerCase()),
-    ].join('::');
-
-    if (
-      !settings.includeNames
-      && questionUsesPlayerNamesOnlyInChoices(nextQuestion, previousState.players)
-    ) {
-      continue;
-    }
+    const signature = createQuestionSignature(candidate);
 
     if (usedSignatures.has(signature)) {
-      continue;
+      return;
     }
 
     usedSignatures.add(signature);
-    uniqueQuestions.push(sanitizeSavedFriendGroupQuestion(nextQuestion, settings.style, uniqueQuestions.length));
+    uniqueQuestions.push(sanitizeSavedFriendGroupQuestion(candidate, settings.style, uniqueQuestions.length));
+  });
+
+  if (uniqueQuestions.length > settings.numQuestions) {
+    return uniqueQuestions.slice(0, settings.numQuestions);
   }
 
   return uniqueQuestions;
@@ -2241,7 +2497,25 @@ function isStoredFriendGroupHistoryEntry(entry: CustomResponseHistoryItem) {
   return entry.questionId.startsWith('stored-');
 }
 
+function createQuestionSignature(question: Question) {
+  return [
+    question.question.trim().toLowerCase(),
+    question.correct,
+    ...question.choices.map(choice => choice.trim().toLowerCase()),
+  ].join('::');
+}
+
 function buildFriendGroupFollowUpQuestion(previousState: GameState, nextIndex: number): Question | null {
+  const candidates = buildFriendGroupFollowUpQuestionCandidates(previousState, nextIndex);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return pickRandomItem(candidates) ?? null;
+}
+
+function buildFriendGroupFollowUpQuestionCandidates(previousState: GameState, startIndex: number) {
   const currentSessionHistory = previousState.customResponseHistory.filter(entry =>
     !isStoredFriendGroupHistoryEntry(entry)
   );
@@ -2250,76 +2524,98 @@ function buildFriendGroupFollowUpQuestion(previousState: GameState, nextIndex: n
       answer => typeof answer === 'string' && answer.trim().length > 0,
     )
   );
-
-  if (textAnsweredHistory.length > 0) {
-    const randomHistory = textAnsweredHistory[Math.floor(Math.random() * textAnsweredHistory.length)];
-    const answeredPlayerEntries = Object.entries(randomHistory.playerAnswers)
+  const textCandidates = textAnsweredHistory.flatMap((historyEntry, historyIndex) =>
+    Object.entries(historyEntry.playerAnswers)
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].trim().length > 0)
-      .map(([playerId, answer]) => ({ playerId, answer: answer.trim() }));
-
-    if (answeredPlayerEntries.length > 0) {
-      const selectedEntry = answeredPlayerEntries[Math.floor(Math.random() * answeredPlayerEntries.length)];
-      const selectedPlayer = previousState.players.find(player => player.id === selectedEntry.playerId);
-
-      if (selectedPlayer) {
-        const publicQuestion = applyFriendGroupYouTemplate(randomHistory.question, selectedPlayer.name);
-        const followUpSubtitle = `In ${selectedPlayer.name}'s view`;
-        const distractors = shuffleArray(
-          (randomHistory.choices ?? []).filter(choice =>
-            choice.trim()
-            && choice.trim().toLowerCase() !== selectedEntry.answer.toLowerCase(),
-          )
-        ).slice(0, 3);
-
-        const choicePool = [selectedEntry.answer, ...distractors];
-
-        while (choicePool.length < 4) {
-          choicePool.push(`No comment ${choicePool.length}`);
-        }
-
-        const choices = shuffleArray(choicePool);
-        const correct = Math.max(0, choices.indexOf(selectedEntry.answer));
-
-        return {
-          id: `friend-group-follow-up-${nextIndex}-${crypto.randomUUID()}`,
-          displaySubtitle: followUpSubtitle,
-          question: publicQuestion,
-          choices,
-          correct,
-          probabilities: choices.map((_, index) => (index === correct ? 0.58 : 0.14)),
-          keywords: ['friend-group-pack', 'friend-group-follow-up', 'player-history'],
-          category: 'Friend Group Pack: About Your Crew',
-          source: null,
-        };
-      }
-    }
-  }
+      .map(([playerId, answer], playerIndex) =>
+        buildFriendGroupTextHistoryCandidate(
+          previousState,
+          historyEntry,
+          playerId,
+          answer.trim(),
+          startIndex + historyIndex + playerIndex
+        )
+      )
+      .filter((candidate): candidate is Question => candidate !== null)
+  );
 
   const answeredHistory = currentSessionHistory.filter(entry =>
     Object.values(entry.playerAnswers).some(answer => typeof answer === 'number' && answer >= 0)
   );
 
-  if (answeredHistory.length === 0) {
-    return null;
-  }
+  const choiceCandidates = answeredHistory.flatMap((historyEntry, historyIndex) =>
+    Object.entries(historyEntry.playerAnswers)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0)
+      .map(([playerId], playerIndex) =>
+        buildFriendGroupChoiceHistoryCandidate(
+          previousState,
+          historyEntry,
+          playerId,
+          startIndex + textCandidates.length + historyIndex + playerIndex
+        )
+      )
+      .filter((candidate): candidate is Question => candidate !== null)
+  );
 
-  const randomHistory = answeredHistory[Math.floor(Math.random() * answeredHistory.length)];
-  const answeredPlayerEntries = Object.entries(randomHistory.playerAnswers)
-    .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0)
-    .map(([playerId, answer]) => ({ playerId, answer }));
+  return [...textCandidates, ...choiceCandidates];
+}
 
-  if (answeredPlayerEntries.length === 0) {
-    return null;
-  }
-
-  const selectedEntry = answeredPlayerEntries[Math.floor(Math.random() * answeredPlayerEntries.length)];
-  const selectedPlayer = previousState.players.find(player => player.id === selectedEntry.playerId);
+function buildFriendGroupTextHistoryCandidate(
+  previousState: GameState,
+  historyEntry: CustomResponseHistoryItem,
+  playerId: string,
+  answer: string,
+  nextIndex: number
+): Question | null {
+  const selectedPlayer = previousState.players.find(player => player.id === playerId);
 
   if (!selectedPlayer) {
     return null;
   }
 
-  const publicQuestion = applyFriendGroupYouTemplate(randomHistory.question, selectedPlayer.name);
+  const publicQuestion = applyFriendGroupYouTemplate(historyEntry.question, selectedPlayer.name);
+  const followUpSubtitle = `In ${selectedPlayer.name}'s view`;
+  const distractors = shuffleArray(
+    (historyEntry.choices ?? []).filter(choice =>
+      choice.trim()
+      && choice.trim().toLowerCase() !== answer.toLowerCase(),
+    )
+  ).slice(0, 3);
+  const choicePool = [answer, ...distractors];
+
+  while (choicePool.length < 4) {
+    choicePool.push(`No comment ${choicePool.length}`);
+  }
+
+  const choices = shuffleArray(choicePool);
+  const correct = Math.max(0, choices.indexOf(answer));
+
+  return {
+    id: `friend-group-follow-up-${nextIndex}-${crypto.randomUUID()}`,
+    displaySubtitle: followUpSubtitle,
+    question: publicQuestion,
+    choices,
+    correct,
+    probabilities: choices.map((_, index) => (index === correct ? 0.58 : 0.14)),
+    keywords: ['friend-group-pack', 'friend-group-follow-up', 'player-history'],
+    category: 'Friend Group Pack: About Your Crew',
+    source: null,
+  };
+}
+
+function buildFriendGroupChoiceHistoryCandidate(
+  previousState: GameState,
+  historyEntry: CustomResponseHistoryItem,
+  playerId: string,
+  nextIndex: number
+): Question | null {
+  const selectedPlayer = previousState.players.find(player => player.id === playerId);
+
+  if (!selectedPlayer) {
+    return null;
+  }
+
+  const publicQuestion = applyFriendGroupYouTemplate(historyEntry.question, selectedPlayer.name);
   const followUpSubtitle = `In ${selectedPlayer.name}'s view`;
   const allPlayerNames = previousState.players.map(player => player.name).filter(Boolean);
   const distractors = shuffleArray(allPlayerNames.filter(name => name !== selectedPlayer.name));
@@ -2446,6 +2742,22 @@ function resetCustomPackSelections(customPacks: GameState['customPacks']) {
   return customPacks.map(pack => ({ ...pack, enabled: false }));
 }
 
+function mergeCustomPackSelections(
+  previousCustomPacks: GameState['customPacks'],
+  nextCustomPacks: GameState['customPacks'],
+) {
+  const enabledPackIds = new Set(
+    previousCustomPacks
+      .filter(pack => pack.enabled)
+      .map(pack => pack.id)
+  );
+
+  return nextCustomPacks.map(pack => ({
+    ...pack,
+    enabled: enabledPackIds.has(pack.id),
+  }));
+}
+
 function getTimeRemaining(roundDeadlineAt: string): number {
   const deadlineMs = new Date(roundDeadlineAt).getTime();
   const diffMs = deadlineMs - Date.now();
@@ -2456,6 +2768,20 @@ function getTimeRemaining(roundDeadlineAt: string): number {
 function clearStoredRoomSession() {
   window.localStorage.removeItem(STORAGE_KEYS.roomCode);
   window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+}
+
+function restoreStoredRoomSession(roomCode: string | null, hostRoomCode: string | null) {
+  if (roomCode) {
+    window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
+  } else {
+    window.localStorage.removeItem(STORAGE_KEYS.roomCode);
+  }
+
+  if (hostRoomCode) {
+    window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, hostRoomCode);
+  } else {
+    window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+  }
 }
 
 function getSnapshotStorageKey(roomCode: string) {
@@ -2521,10 +2847,18 @@ function coerceIncomingState(value: unknown): GameState | null {
     ...createInitialState(),
     ...candidate,
     roundDeadlineAt: candidate.roundDeadlineAt ?? null,
+    selectedPolymarketCategories:
+      Array.isArray(candidate.selectedPolymarketCategories)
+        ? normalizeSelectedPolymarketCategories(
+          candidate.selectedPolymarketCategories.filter(
+            (category): category is string => typeof category === 'string'
+          )
+        )
+        : [],
     players: Array.isArray(candidate.players) ? candidate.players : [],
     questionDeck: Array.isArray(candidate.questionDeck) ? candidate.questionDeck : [],
-    pdfs: resetPdfSelections(Array.isArray(candidate.pdfs) ? candidate.pdfs : []),
-    customPacks: resetCustomPackSelections(Array.isArray(candidate.customPacks) ? candidate.customPacks : []),
+    pdfs: Array.isArray(candidate.pdfs) ? candidate.pdfs : [],
+    customPacks: Array.isArray(candidate.customPacks) ? candidate.customPacks : [],
     profileAssignments:
       candidate.profileAssignments && typeof candidate.profileAssignments === 'object'
         ? candidate.profileAssignments as Record<string, Question[]>

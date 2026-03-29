@@ -19,7 +19,7 @@ export async function fetchFriendGroupCustomPackQuestions(
   settings: FriendGroupPackSettings,
   _playerNames: string[] = []
 ): Promise<Question[]> {
-  const localQuestions = buildQuestionsFromLocalSeeds(settings.style, settings.includeNames);
+  const localQuestions = buildLocalFriendGroupCustomPackQuestions(settings);
 
   if (localQuestions.length < settings.numQuestions) {
     throw new Error(
@@ -28,6 +28,12 @@ export async function fetchFriendGroupCustomPackQuestions(
   }
 
   return shuffle(localQuestions).slice(0, settings.numQuestions);
+}
+
+export function buildLocalFriendGroupCustomPackQuestions(
+  settings: Pick<FriendGroupPackSettings, 'style' | 'includeNames'>
+) {
+  return buildQuestionsFromLocalSeeds(settings.style, settings.includeNames);
 }
 
 function buildQuestionsFromLocalSeeds(
