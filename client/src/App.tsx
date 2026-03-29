@@ -8,7 +8,6 @@ import { RequireAuth } from '@/auth/components/RequireAuth';
 import { AppFlowProvider, useAppFlow } from '@/app/AppFlowContext';
 import { StartFlowView } from '@/app/views/StartFlowView';
 import { RealStartView } from '@/app/views/RealStartView';
-import { getStoredPlayerRoute } from '@/app/sessionRouting';
 import { AudioSettingsProvider } from '@/shared/context/AudioSettingsContext';
 import { useAccentButtonClickSound } from '@/shared/hooks/useAccentButtonClickSound';
 
@@ -18,14 +17,14 @@ function AccentButtonClickSound() {
 }
 
 function RootRedirect() {
-  const { isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   const { isReady } = useAppFlow();
 
   if (isLoading || !isReady) {
     return null;
   }
 
-  return <Navigate to="/real" replace />;
+  return <Navigate to={user ? '/host' : '/auth'} replace />;
 }
 
 function StartRoute() {

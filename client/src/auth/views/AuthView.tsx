@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { getStoredPlayerRoute } from '@/app/sessionRouting';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useAuth } from '../AuthContext';
 
@@ -29,7 +28,7 @@ export function AuthView() {
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: { pathname?: string } } | null;
-    return state?.from?.pathname || getStoredPlayerRoute() || '/real';
+    return state?.from?.pathname || '/host';
   }, [location.state]);
 
   if (!isLoading && user) {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
@@ -15,7 +15,6 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isEndingGame, setIsEndingGame] = useState(false);
   const [isReturningToLobby, setIsReturningToLobby] = useState(false);
-  const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { roomCode, phase } = useGameState();
