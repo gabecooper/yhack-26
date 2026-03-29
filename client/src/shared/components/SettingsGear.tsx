@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
-import { useAppFlow } from '@/app/AppFlowContext';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
 
@@ -19,7 +18,6 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
-  const { flow, clearFlow } = useAppFlow();
   const { roomCode, phase } = useGameState();
   const { returnToLobby, setPhase } = useGameActions();
   const {
@@ -58,12 +56,6 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
     } finally {
       setIsSigningOut(false);
     }
-  };
-
-  const handleSwitchFlow = () => {
-    clearFlow();
-    setIsOpen(false);
-    navigate('/start');
   };
 
   const handleEndGame = async () => {
@@ -141,19 +133,6 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
                     className="h-5 w-5 accent-vault-gold"
                   />
                 </label>
-              </div>
-              <div className="mt-6 rounded-2xl bg-black/5 px-4 py-3 font-ui">
-                <p className="text-xs uppercase tracking-[0.24em] text-[#4a5568]">Startup Flow</p>
-                <p className="mt-2 text-base font-semibold capitalize">
-                  {flow ?? 'Not selected'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSwitchFlow}
-                  className="mt-4 w-full rounded-xl border border-[#1a202c]/10 bg-white px-4 py-3 text-base font-semibold text-[#1a202c] transition-colors hover:bg-[#f7fafc]"
-                >
-                  Switch Flow
-                </button>
               </div>
               {canEndGame && (
                 <div className="mt-6 rounded-2xl bg-red-50 px-4 py-3 font-ui">

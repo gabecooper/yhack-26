@@ -21,16 +21,17 @@ const STORAGE_KEY = 'raccoon_app_flow';
 const AppFlowContext = createContext<AppFlowContextValue | null>(null);
 
 export function AppFlowProvider({ children }: { children: ReactNode }) {
-  const [flow, setFlow] = useState<AppFlow | null>(null);
+  const [flow, setFlow] = useState<AppFlow>('real');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     const storedFlow = window.localStorage.getItem(STORAGE_KEY);
 
-    if (storedFlow === 'dev' || storedFlow === 'real') {
-      setFlow(storedFlow);
+    if (storedFlow !== 'real') {
+      window.localStorage.setItem(STORAGE_KEY, 'real');
     }
 
+    setFlow('real');
     setIsReady(true);
   }, []);
 
@@ -42,8 +43,8 @@ export function AppFlowProvider({ children }: { children: ReactNode }) {
       setFlow(nextFlow);
     },
     clearFlow() {
-      window.localStorage.removeItem(STORAGE_KEY);
-      setFlow(null);
+      window.localStorage.setItem(STORAGE_KEY, 'real');
+      setFlow('real');
     },
   }), [flow, isReady]);
 

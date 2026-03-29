@@ -18,27 +18,14 @@ function AccentButtonClickSound() {
 }
 
 function RootRedirect() {
-  const { user, isLoading } = useAuth();
-  const { flow, isReady } = useAppFlow();
+  const { isLoading } = useAuth();
+  const { isReady } = useAppFlow();
 
   if (isLoading || !isReady) {
     return null;
   }
 
-  if (!flow) {
-    return <Navigate to="/start" replace />;
-  }
-
-  if (flow === 'real') {
-    return <Navigate to="/real" replace />;
-  }
-
-  const storedPlayerRoute = getStoredPlayerRoute();
-  if (storedPlayerRoute) {
-    return <Navigate to={storedPlayerRoute} replace />;
-  }
-
-  return <Navigate to={user ? '/host' : '/auth'} replace />;
+  return <Navigate to="/real" replace />;
 }
 
 function StartRoute() {
