@@ -34,13 +34,8 @@ function shuffle<T>(items: T[]) {
 }
 
 async function polyFetchJson<T>(url: string): Promise<T> {
-  const primaryUrl =
-    import.meta.env.DEV && url.startsWith(GAMMA_ORIGIN)
-      ? `/polymarket-api${url.slice(GAMMA_ORIGIN.length)}`
-      : url;
-
   try {
-    const response = await fetch(primaryUrl);
+    const response = await fetch(url);
     if (response.ok) {
       return response.json() as Promise<T>;
     }
@@ -132,10 +127,13 @@ function eventToQuestion(event: PolymarketEvent, tag: string): Question | null {
 
 export async function fetchPolymarketQuestions(tag: string, count = 5) {
   const slug = gammaTagSlugForUiCategory(tag);
+  const apiUrl = `/api/polymarket-events?tagSlug=${encodeURIComponent(slug)}&limit=${POOL_LIMIT}`;
+  const gammaUrl =
+    `${GAMMA_ORIGIN}/events?tag_slug=${encodeURIComponent(slug)}&closed=false&active=true&limit=${POOL_LIMIT}&order=volume24hr&ascending=false`;
 
   try {
-    const events = await polyFetchJson<PolymarketEvent[]>(
-      `${GAMMA_ORIGIN}/events?tag_slug=${encodeURIComponent(slug)}&closed=false&active=true&limit=${POOL_LIMIT}&order=volume24hr&ascending=false`
+    const events = await polyFetchJson<PolymarketEvent[]>(apiUrl).catch(() =>
+      polyFetchJson<PolymarketEvent[]>(gammaUrl)
     );
 
     if (!Array.isArray(events)) {
