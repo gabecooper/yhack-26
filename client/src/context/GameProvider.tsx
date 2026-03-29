@@ -30,16 +30,9 @@ const SNAPSHOT_PREFIX = 'heist_host_snapshot:';
 const JOIN_REQUEST_TIMEOUT_MS = 4000;
 
 interface JoinRequestPayload {
-  requestId: string;
   roomCode: string;
   playerId: string;
   playerName: string;
-}
-
-interface JoinAckPayload {
-  requestId: string;
-  ok: boolean;
-  playerId?: string;
 }
 
 interface SubmitAnswerPayload {
@@ -67,8 +60,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const isHostRef = useRef(false);
   const hasRestoredSessionRef = useRef(false);
   const isFinalizingQuestionRef = useRef(false);
-  const joinResolverRef = useRef<{
-    requestId: string;
+  const persistSnapshotTimeoutRef = useRef<number | null>(null);
+  const pendingJoinRef = useRef<{
+    playerId: string;
     resolve: (playerId: string | null) => void;
     timeoutId: number;
   } | null>(null);
@@ -76,8 +70,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stateRef.current = state;
 
-    if (isHostRef.current && state.roomCode) {
-      window.localStorage.setItem(getSnapshotStorageKey(state.roomCode), JSON.stringify(state));
+    if (
+      isHostRef.current
+      && state.roomCode
+      && state.phase !== 'question'
+      && state.phase !== 'results'
+    ) {
+      if (persistSnapshotTimeoutRef.current !== null) {
+        window.clearTimeout(persistSnapshotTimeoutRef.current);
+      }
+
+      persistSnapshotTimeoutRef.current = window.setTimeout(() => {
+        window.localStorage.setItem(getSnapshotStorageKey(state.roomCode), JSON.stringify(stateRef.current));
+        persistSnapshotTimeoutRef.current = null;
+      }, 150);
     }
   }, [state]);
 
@@ -116,28 +122,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const sendBroadcast = useCallback(async (event: string, payload: Record<string, unknown>) => {
+  const sendBroadcast = useCallback((event: string, payload: Record<string, unknown>) => {
     if (!channelRef.current) {
       return;
     }
 
-    const result = await channelRef.current.send({
+    void channelRef.current.send({
       type: 'broadcast',
       event,
       payload,
+    }).then(result => {
+      if (result === 'error') {
+        console.error(`Broadcast "${event}" failed`);
+      }
+    }).catch(error => {
+      console.error(`Broadcast "${event}" failed`, error);
     });
-
-    if (result === 'error') {
-      console.error(`Broadcast "${event}" failed`);
-    }
   }, []);
 
-  const broadcastSnapshot = useCallback(async (snapshot: GameState, reason: string) => {
+  const broadcastSnapshot = useCallback((snapshot: GameState, reason: string) => {
     if (!isHostRef.current) {
       return;
     }
 
-    await sendBroadcast('state-sync', { reason, state: snapshot });
+    sendBroadcast('state-sync', { reason, state: snapshot });
   }, [sendBroadcast]);
 
   const commitHostState = useCallback((updater: StateUpdater, reason: string) => {
@@ -213,8 +221,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     setLocalState(nextState);
-    void broadcastSnapshot(nextState, 'presence-sync');
-  }, [broadcastSnapshot, setLocalState]);
+  }, [setLocalState]);
 
   const handleJoinRequest = useCallback((payload: JoinRequestPayload) => {
     if (!isHostRef.current || payload.roomCode !== stateRef.current.roomCode) {
@@ -225,14 +232,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const normalizedName = payload.playerName.trim().slice(0, 16);
 
     if (!normalizedName) {
-      void sendBroadcast('join-ack', { requestId: payload.requestId, ok: false });
       return;
     }
 
     const existingPlayer = currentState.players.find(player => player.id === payload.playerId);
 
     if (!existingPlayer && currentState.players.length >= GAME_CONFIG.maxPlayers) {
-      void sendBroadcast('join-ack', { requestId: payload.requestId, ok: false });
       return;
     }
 
@@ -273,24 +278,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     setLocalState(nextState);
     void broadcastSnapshot(nextState, 'join-request');
-    void sendBroadcast('join-ack', {
-      requestId: payload.requestId,
-      ok: true,
-      playerId: payload.playerId,
-    });
   }, [broadcastSnapshot, sendBroadcast, setLocalState]);
-
-  const handleJoinAck = useCallback((payload: JoinAckPayload) => {
-    const pendingJoin = joinResolverRef.current;
-
-    if (!pendingJoin || pendingJoin.requestId !== payload.requestId) {
-      return;
-    }
-
-    window.clearTimeout(pendingJoin.timeoutId);
-    joinResolverRef.current = null;
-    pendingJoin.resolve(payload.ok ? payload.playerId ?? null : null);
-  }, []);
 
   const handleAnswerSubmission = useCallback((payload: SubmitAnswerPayload) => {
     if (!isHostRef.current) {
@@ -326,8 +314,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     setLocalState(nextState);
-    void broadcastSnapshot(nextState, 'answer-submitted');
-  }, [broadcastSnapshot, setLocalState]);
+  }, [setLocalState]);
 
   const handleLeaveMessage = useCallback((payload: LeaveRoomPayload) => {
     if (!isHostRef.current) {
@@ -394,6 +381,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
 
         setLocalState(incomingState);
+
+        const pendingJoin = pendingJoinRef.current;
+        if (pendingJoin && incomingState.players.some(player => player.id === pendingJoin.playerId)) {
+          window.clearTimeout(pendingJoin.timeoutId);
+          pendingJoinRef.current = null;
+          window.localStorage.setItem(STORAGE_KEYS.roomCode, incomingState.roomCode);
+          window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+          pendingJoin.resolve(pendingJoin.playerId);
+        }
       })
       .on('broadcast', { event: 'request-state' }, () => {
         if (!isHostRef.current) {
@@ -406,12 +402,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const parsedPayload = coerceJoinRequest(payload);
         if (parsedPayload) {
           handleJoinRequest(parsedPayload);
-        }
-      })
-      .on('broadcast', { event: 'join-ack' }, ({ payload }) => {
-        const parsedPayload = coerceJoinAck(payload);
-        if (parsedPayload) {
-          handleJoinAck(parsedPayload);
         }
       })
       .on('broadcast', { event: 'submit-answer' }, ({ payload }) => {
@@ -435,15 +425,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     await new Promise<void>((resolve, reject) => {
       channel.subscribe(async (status, error) => {
         if (status === 'SUBSCRIBED') {
-          try {
-            await channel.track(
-              options.asHost
-                ? { role: 'host' }
-                : { role: 'player', playerId: options.playerId }
-            );
-          } catch (trackError) {
+          void channel.track(
+            options.asHost
+              ? { role: 'host' }
+              : { role: 'player', playerId: options.playerId }
+          ).catch(trackError => {
             console.error('Unable to track Supabase presence', trackError);
-          }
+          });
 
           if (options.asHost) {
             const initialState =
@@ -455,11 +443,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
             window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
 
             setLocalState(initialState);
-            await broadcastSnapshot(initialState, 'host-subscribed');
+            broadcastSnapshot(initialState, 'host-subscribed');
           } else {
             window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
             window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
-            await sendBroadcast('request-state', { roomCode });
+            sendBroadcast('request-state', { roomCode });
           }
 
           resolve();
@@ -474,7 +462,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [
     broadcastSnapshot,
     handleAnswerSubmission,
-    handleJoinAck,
     handleJoinRequest,
     handleLeaveMessage,
     sendBroadcast,
@@ -520,36 +507,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [subscribeToRoom, user]);
 
   useEffect(() => {
-    if (state.phase !== 'question' || !state.roundDeadlineAt) {
-      return;
-    }
-
-    const updateCountdown = () => {
-      setLocalState(previousState => {
-        if (previousState.phase !== 'question' || !previousState.roundDeadlineAt) {
-          return previousState;
-        }
-
-        const nextTimeRemaining = getTimeRemaining(previousState.roundDeadlineAt);
-
-        if (nextTimeRemaining === previousState.timeRemaining) {
-          return previousState;
-        }
-
-        return {
-          ...previousState,
-          timeRemaining: nextTimeRemaining,
-        };
-      });
-    };
-
-    updateCountdown();
-    const intervalId = window.setInterval(updateCountdown, 250);
-
-    return () => window.clearInterval(intervalId);
-  }, [setLocalState, state.phase, state.roundDeadlineAt]);
-
-  useEffect(() => {
     if (!isHostRef.current || state.phase !== 'question') {
       return;
     }
@@ -564,13 +521,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (state.timeRemaining <= 0) {
-      finalizeQuestionRound('timer-expired');
+    if (!state.roundDeadlineAt) {
+      return;
     }
-  }, [finalizeQuestionRound, state.phase, state.players, state.timeRemaining]);
+
+    const timeoutMs = Math.max(0, new Date(state.roundDeadlineAt).getTime() - Date.now());
+    const timeoutId = window.setTimeout(() => {
+      finalizeQuestionRound('timer-expired');
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [finalizeQuestionRound, state.phase, state.players, state.roundDeadlineAt]);
 
   useEffect(() => {
     return () => {
+      if (persistSnapshotTimeoutRef.current !== null) {
+        window.clearTimeout(persistSnapshotTimeoutRef.current);
+      }
+      if (pendingJoinRef.current) {
+        window.clearTimeout(pendingJoinRef.current.timeoutId);
+        pendingJoinRef.current.resolve(null);
+        pendingJoinRef.current = null;
+      }
       void teardownChannel();
     };
   }, [teardownChannel]);
@@ -582,13 +554,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const roomCode = generateRoomCode();
     const initialState = createRealtimeRoomState(roomCode);
+    const optimisticState = {
+      ...initialState,
+      phase: 'room' as const,
+    };
 
-    await subscribeToRoom(roomCode, {
+    isHostRef.current = true;
+    window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
+    window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
+    setLocalState(optimisticState);
+
+    void subscribeToRoom(roomCode, {
       asHost: true,
       presenceKey: `host:${user.id}`,
       initialState,
+    }).catch(error => {
+      console.error('Unable to subscribe host room', error);
     });
-  }, [subscribeToRoom, user]);
+  }, [setLocalState, subscribeToRoom, user]);
 
   const joinRoom = useCallback(async (roomCode: string, playerName: string): Promise<string | null> => {
     if (!supabase) {
@@ -605,17 +588,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const playerId = window.localStorage.getItem(STORAGE_KEYS.playerId) ?? crypto.randomUUID();
     window.localStorage.setItem(STORAGE_KEYS.playerId, playerId);
 
-    await subscribeToRoom(normalizedRoomCode, {
-      asHost: false,
-      presenceKey: playerId,
-      playerId,
-    });
-
     return new Promise(resolve => {
-      const requestId = crypto.randomUUID();
       const timeoutId = window.setTimeout(() => {
-        if (joinResolverRef.current?.requestId === requestId) {
-          joinResolverRef.current = null;
+        if (pendingJoinRef.current?.playerId === playerId) {
+          pendingJoinRef.current = null;
         }
 
         void teardownChannel();
@@ -623,24 +599,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
         resolve(null);
       }, JOIN_REQUEST_TIMEOUT_MS);
 
-      joinResolverRef.current = {
-        requestId,
-        resolve: joinedPlayerId => {
-          if (joinedPlayerId) {
-            window.localStorage.setItem(STORAGE_KEYS.roomCode, normalizedRoomCode);
-            window.localStorage.setItem(STORAGE_KEYS.playerId, joinedPlayerId);
-          }
-
-          resolve(joinedPlayerId);
-        },
+      pendingJoinRef.current = {
+        playerId,
+        resolve,
         timeoutId,
       };
 
-      void sendBroadcast('join-request', {
-        requestId,
-        roomCode: normalizedRoomCode,
+      void subscribeToRoom(normalizedRoomCode, {
+        asHost: false,
+        presenceKey: playerId,
         playerId,
-        playerName: normalizedName,
+      }).then(() => {
+        sendBroadcast('join-request', {
+          roomCode: normalizedRoomCode,
+          playerId,
+          playerName: normalizedName,
+        });
+      }).catch(error => {
+        console.error('Unable to subscribe player room', error);
+        if (pendingJoinRef.current?.playerId === playerId) {
+          window.clearTimeout(timeoutId);
+          pendingJoinRef.current = null;
+        }
+        resolve(null);
       });
     });
   }, [sendBroadcast, subscribeToRoom, teardownChannel]);
@@ -649,13 +630,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const playerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
 
     if (!isHostRef.current && playerId) {
-      await sendBroadcast('leave-room', { playerId });
-    }
-
-    if (joinResolverRef.current) {
-      window.clearTimeout(joinResolverRef.current.timeoutId);
-      joinResolverRef.current.resolve(null);
-      joinResolverRef.current = null;
+      sendBroadcast('leave-room', { playerId });
     }
 
     await teardownChannel();
@@ -1142,8 +1117,7 @@ function coerceJoinRequest(value: unknown): JoinRequestPayload | null {
   const payload = value as Partial<JoinRequestPayload>;
 
   if (
-    typeof payload.requestId !== 'string'
-    || typeof payload.roomCode !== 'string'
+    typeof payload.roomCode !== 'string'
     || typeof payload.playerId !== 'string'
     || typeof payload.playerName !== 'string'
   ) {
@@ -1151,20 +1125,6 @@ function coerceJoinRequest(value: unknown): JoinRequestPayload | null {
   }
 
   return payload as JoinRequestPayload;
-}
-
-function coerceJoinAck(value: unknown): JoinAckPayload | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const payload = value as Partial<JoinAckPayload>;
-
-  if (typeof payload.requestId !== 'string' || typeof payload.ok !== 'boolean') {
-    return null;
-  }
-
-  return payload as JoinAckPayload;
 }
 
 function coerceSubmitAnswer(value: unknown): SubmitAnswerPayload | null {

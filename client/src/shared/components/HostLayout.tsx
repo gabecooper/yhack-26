@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { SettingsGear } from './SettingsGear';
-import defaultBackground from '../../../../lobbyv2.png';
+import defaultBackground from '@/assets/optimized/lobbyv2.webp';
 
 interface HostLayoutProps {
   children: ReactNode;

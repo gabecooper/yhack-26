@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useGameActions, useGameState } from '@/context/GameContext';
-import lobbyBackground from '../../../../lobbyv2.png';
+import lobbyBackground from '@/assets/optimized/lobbyv2.webp';
 
 export function HomeView() {
   const navigate = useNavigate();

@@ -3,7 +3,7 @@ import { HostLayout } from '@/shared/components/HostLayout';
 import { PlayerReaction } from '../components/PlayerReaction';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
-import v4RoofBg from '@/assets/backgrounds/v4roof.png';
+import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();

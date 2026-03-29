@@ -1,10 +1,10 @@
 import { HostLayout } from '@/shared/components/HostLayout';
 import { LockTimer } from '@/shared/components/LockTimer';
 import { useGameState } from '@/context/GameContext';
-import v4RoofBg from '@/assets/backgrounds/v4roof.png';
+import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 export function QuestionView() {
-  const { currentQuestion, timeRemaining, timerDuration } = useGameState();
+  const { currentQuestion, timerDuration, roundDeadlineAt } = useGameState();
   const answerRowStyles = [
     { rotate: 3, offsetX: 0 },
     { rotate: 1, offsetX: -18 },
@@ -68,7 +68,7 @@ export function QuestionView() {
           }}
         >
           <div style={{ transform: 'scale(0.7)', transformOrigin: 'top left' }}>
-            <LockTimer timeRemaining={timeRemaining} totalTime={timerDuration} size={200} />
+            <LockTimer deadlineAt={roundDeadlineAt} totalTime={timerDuration} size={200} />
           </div>
         </div>
       </div>

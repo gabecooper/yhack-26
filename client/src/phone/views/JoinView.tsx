@@ -12,15 +12,22 @@ export function JoinView({ onJoin }: JoinViewProps) {
   const [roomCode, setRoomCode] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
   const { joinRoom } = useGameActions();
 
-  const canJoin = roomCode.length === GAME_CONFIG.roomCodeLength && playerName.trim().length > 0;
+  const canJoin =
+    roomCode.length === GAME_CONFIG.roomCodeLength
+    && playerName.trim().length > 0
+    && !isJoining;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canJoin) return;
     setErrorMessage(null);
+    setIsJoining(true);
+
     const id = await joinRoom(roomCode.toUpperCase(), playerName.trim());
+    setIsJoining(false);
 
     if (!id) {
       setErrorMessage('That room code is not active right now.');
@@ -73,6 +80,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
               autoFocus
               inputMode="text"
               autoComplete="off"
+              disabled={isJoining}
             />
           </div>
 
@@ -88,6 +96,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
               maxLength={16}
               className="minimal-input text-center font-ui text-xl"
               autoComplete="off"
+              disabled={isJoining}
             />
           </div>
 
@@ -96,7 +105,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
             disabled={!canJoin}
             className="minimal-button-primary mt-2 w-full py-4 text-lg"
           >
-            Join Room
+            {isJoining ? 'Searching...' : 'Join Room'}
           </button>
 
           {errorMessage && (

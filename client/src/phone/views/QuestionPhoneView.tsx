@@ -4,7 +4,6 @@ import { PhoneLayout } from '@/shared/components/PhoneLayout';
 import { AnswerButton } from '../components/AnswerButton';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import { getAnswerMeta } from '@/constants/gameConfig';
-import v4RoofBg from '@/assets/backgrounds/v4roof.png';
 
 interface QuestionPhoneViewProps {
   playerId: string;
@@ -28,12 +27,7 @@ export function QuestionPhoneView({ playerId }: QuestionPhoneViewProps) {
   };
 
   return (
-    <PhoneLayout
-      minimalSettingsGear
-      backgroundImage={v4RoofBg}
-      overlayClassName="bg-black/35"
-      contentClassName="justify-center"
-    >
+    <PhoneLayout minimalSettingsGear contentClassName="justify-center">
       {locked ? (
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5 text-center">
           <motion.div

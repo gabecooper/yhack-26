@@ -256,13 +256,11 @@ export function RoomView() {
                 <img
                   src={crewMember.image}
                   alt={`${crewMember.label} raccoon`}
-                  className={`h-32 w-24 object-contain object-bottom transition-opacity ${
-                    player ? 'opacity-100' : 'opacity-30'
-                  }`}
+                  className="h-32 w-24 object-contain object-bottom"
                   style={{
                     transform: `scale(${crewMember.scale})`,
                     transformOrigin: 'bottom center',
-                    filter: player ? 'none' : 'saturate(0.35)',
+                    filter: player ? 'none' : 'grayscale(100%)',
                   }}
                 />
               </div>

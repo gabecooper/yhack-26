@@ -3,7 +3,7 @@ import { HostLayout } from '@/shared/components/HostLayout';
 import { CharacterAvatar } from '@/shared/components/CharacterAvatar';
 import { ScoreBoard } from '../components/ScoreBoard';
 import { useGameState, useGameActions } from '@/context/GameContext';
-import v4RoofBg from '@/assets/backgrounds/v4roof.png';
+import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
 interface WinViewProps {
   isGameOver: boolean;

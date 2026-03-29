@@ -1,10 +1,11 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import lockDialImage from '../../../../lock1.png';
 
 interface LockTimerProps {
-  timeRemaining: number;
   totalTime: number;
+  timeRemaining?: number;
+  deadlineAt?: string | null;
   size?: number;
 }
 
@@ -169,12 +170,40 @@ function LockCountdownDigits({
   );
 }
 
-export function LockTimer({ timeRemaining, totalTime, size = 140 }: LockTimerProps) {
+export function LockTimer({
+  timeRemaining,
+  totalTime,
+  deadlineAt,
+  size = 140,
+}: LockTimerProps) {
+  const [derivedTimeRemaining, setDerivedTimeRemaining] = useState(() => (
+    deadlineAt ? getTimeRemaining(deadlineAt) : Math.ceil(timeRemaining ?? totalTime)
+  ));
+
+  useEffect(() => {
+    if (!deadlineAt) {
+      setDerivedTimeRemaining(Math.ceil(timeRemaining ?? totalTime));
+      return;
+    }
+
+    const syncTime = () => {
+      setDerivedTimeRemaining(getTimeRemaining(deadlineAt));
+    };
+
+    syncTime();
+    const intervalId = window.setInterval(syncTime, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [deadlineAt, timeRemaining, totalTime]);
+
+  const displayTimeRemaining = deadlineAt
+    ? derivedTimeRemaining
+    : Math.ceil(timeRemaining ?? totalTime);
   const safeTotalTime = totalTime > 0 ? totalTime : 1;
-  const remainingRatio = clamp(timeRemaining / safeTotalTime, 0, 1);
+  const remainingRatio = clamp(displayTimeRemaining / safeTotalTime, 0, 1);
   const fillRatio = 1 - remainingRatio;
   const fillDegrees = fillRatio * 360;
-  const isUrgent = timeRemaining <= 5;
+  const isUrgent = displayTimeRemaining <= 5;
 
   return (
     <div
@@ -184,7 +213,14 @@ export function LockTimer({ timeRemaining, totalTime, size = 140 }: LockTimerPro
       <LockDialFace />
       <LockProgressRing fillDegrees={fillDegrees} fillRatio={fillRatio} />
       <LockPulseCore isUrgent={isUrgent} />
-      <LockCountdownDigits timeRemaining={timeRemaining} size={size} isUrgent={isUrgent} />
+      <LockCountdownDigits timeRemaining={displayTimeRemaining} size={size} isUrgent={isUrgent} />
     </div>
   );
+}
+
+function getTimeRemaining(deadlineAt: string): number {
+  const deadlineMs = new Date(deadlineAt).getTime();
+  const diffMs = deadlineMs - Date.now();
+
+  return Math.max(0, Math.ceil(diffMs / 1000));
 }
