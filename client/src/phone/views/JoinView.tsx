@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { PhoneLayout } from '@/shared/components/PhoneLayout';
 import { useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 
 const PLAYER_NAME_STORAGE_KEY = 'heist_player_name';
 const ROOM_CODE_STORAGE_KEY = 'heist_room_code';
@@ -12,9 +13,10 @@ interface JoinViewProps {
 }
 
 export function JoinView({ onJoin }: JoinViewProps) {
-  const storedPlayerName = window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.slice(0, 16) ?? '';
+  const storage = getBrowserStorage();
+  const storedPlayerName = storage.getItem(PLAYER_NAME_STORAGE_KEY)?.slice(0, 16) ?? '';
   const [roomCode, setRoomCode] = useState(() =>
-    window.localStorage.getItem(ROOM_CODE_STORAGE_KEY)?.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength) ?? ''
+    storage.getItem(ROOM_CODE_STORAGE_KEY)?.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength) ?? ''
   );
   const [playerName, setPlayerName] = useState(() => storedPlayerName);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -33,8 +35,8 @@ export function JoinView({ onJoin }: JoinViewProps) {
     setErrorMessage(null);
     setIsJoining(true);
 
-    window.localStorage.setItem(ROOM_CODE_STORAGE_KEY, roomCode.toUpperCase());
-    window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, effectivePlayerName);
+    storage.setItem(ROOM_CODE_STORAGE_KEY, roomCode.toUpperCase());
+    storage.setItem(PLAYER_NAME_STORAGE_KEY, effectivePlayerName);
 
     const id = await joinRoom(roomCode.toUpperCase(), effectivePlayerName);
     setIsJoining(false);
@@ -88,7 +90,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
               onChange={e => {
                 const nextRoomCode = e.target.value.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength);
                 setRoomCode(nextRoomCode);
-                window.localStorage.setItem(ROOM_CODE_STORAGE_KEY, nextRoomCode);
+                storage.setItem(ROOM_CODE_STORAGE_KEY, nextRoomCode);
               }}
               placeholder="ABCD"
               maxLength={GAME_CONFIG.roomCodeLength}
@@ -110,7 +112,7 @@ export function JoinView({ onJoin }: JoinViewProps) {
               onChange={e => {
                 const nextPlayerName = e.target.value.slice(0, 16);
                 setPlayerName(nextPlayerName);
-                window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, nextPlayerName);
+                storage.setItem(PLAYER_NAME_STORAGE_KEY, nextPlayerName);
               }}
               placeholder="Enter name..."
               maxLength={16}

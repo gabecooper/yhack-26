@@ -10,6 +10,7 @@ import { QuestionPhoneView } from './views/QuestionPhoneView';
 import { ResultsPhoneView } from './views/ResultsPhoneView';
 import { SpectatorView } from './views/SpectatorView';
 import type { GamePhase } from '@/types/game';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 
 const PAGE_TRANSITION = {
   initial: { opacity: 0, y: 20 },
@@ -46,14 +47,15 @@ function getHostPhaseSignal(phase: GamePhase) {
 export function PhoneApp() {
   const { phase, players } = useGameState();
   const { leaveRoom } = useGameActions();
+  const storage = getBrowserStorage();
   const [playerId, setPlayerId] = useState<string | null>(() =>
-    localStorage.getItem('heist_player_id')
+    storage.getItem('heist_player_id')
   );
   const storedPlayerSession = getStoredPlayerSession();
 
   useEffect(() => {
-    if (playerId) localStorage.setItem('heist_player_id', playerId);
-  }, [playerId]);
+    if (playerId) storage.setItem('heist_player_id', playerId);
+  }, [playerId, storage]);
 
   const player = players.find(p => p.id === playerId);
   const isEliminated = player?.isEliminated ?? false;
@@ -61,7 +63,7 @@ export function PhoneApp() {
   const handleJoin = (id: string) => setPlayerId(id);
   const handleLeave = () => {
     void leaveRoom();
-    localStorage.removeItem('heist_player_id');
+    storage.removeItem('heist_player_id');
     setPlayerId(null);
   };
 

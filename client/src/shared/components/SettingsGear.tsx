@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 
 interface SettingsGearProps {
   minimal?: boolean;
@@ -25,9 +26,10 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
     setMusicEnabled,
     setSoundEffectsEnabled,
   } = useAudioSettings();
+  const storage = getBrowserStorage();
   const isHostRoute = location.pathname.startsWith('/host');
   const hasHostedRoomCode = typeof window !== 'undefined'
-    && window.localStorage.getItem('heist_host_room_code') === roomCode;
+    && storage.getItem('heist_host_room_code') === roomCode;
   const isHostSession = typeof window !== 'undefined'
     && Boolean(roomCode)
     && (hasHostedRoomCode || (isHostRoute && Boolean(user)));

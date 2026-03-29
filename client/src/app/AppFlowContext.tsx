@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 
 export type AppFlow = 'dev' | 'real';
 
@@ -25,10 +26,11 @@ export function AppFlowProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const storedFlow = window.localStorage.getItem(STORAGE_KEY);
+    const storage = getBrowserStorage();
+    const storedFlow = storage.getItem(STORAGE_KEY);
 
     if (storedFlow !== 'real') {
-      window.localStorage.setItem(STORAGE_KEY, 'real');
+      storage.setItem(STORAGE_KEY, 'real');
     }
 
     setFlow('real');
@@ -39,11 +41,11 @@ export function AppFlowProvider({ children }: { children: ReactNode }) {
     flow,
     isReady,
     selectFlow(nextFlow) {
-      window.localStorage.setItem(STORAGE_KEY, nextFlow);
+      getBrowserStorage().setItem(STORAGE_KEY, nextFlow);
       setFlow(nextFlow);
     },
     clearFlow() {
-      window.localStorage.setItem(STORAGE_KEY, 'real');
+      getBrowserStorage().setItem(STORAGE_KEY, 'real');
       setFlow('real');
     },
   }), [flow, isReady]);

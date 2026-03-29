@@ -1,3 +1,5 @@
+import { getBrowserStorage } from '@/shared/services/browserStorage';
+
 const STORAGE_KEYS = {
   roomCode: 'heist_room_code',
   playerId: 'heist_player_id',
@@ -16,10 +18,11 @@ export function getStoredPlayerSession(): StoredPlayerSession | null {
     return null;
   }
 
-  const roomCode = window.localStorage.getItem(STORAGE_KEYS.roomCode)?.trim().toUpperCase() ?? '';
-  const playerId = window.localStorage.getItem(STORAGE_KEYS.playerId)?.trim() ?? '';
-  const playerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
-  const hostRoomCode = window.localStorage.getItem(STORAGE_KEYS.hostRoomCode)?.trim().toUpperCase() ?? '';
+  const storage = getBrowserStorage();
+  const roomCode = storage.getItem(STORAGE_KEYS.roomCode)?.trim().toUpperCase() ?? '';
+  const playerId = storage.getItem(STORAGE_KEYS.playerId)?.trim() ?? '';
+  const playerName = storage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
+  const hostRoomCode = storage.getItem(STORAGE_KEYS.hostRoomCode)?.trim().toUpperCase() ?? '';
 
   if (!roomCode || !playerId || !playerName || hostRoomCode === roomCode) {
     return null;

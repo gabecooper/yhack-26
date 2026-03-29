@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 
 interface AudioSettingsContextValue {
   musicEnabled: boolean;
@@ -32,7 +33,7 @@ function getInitialToggleState(storageKey: string) {
     return true;
   }
 
-  const storedValue = window.localStorage.getItem(storageKey);
+  const storedValue = getBrowserStorage().getItem(storageKey);
 
   if (storedValue === null) {
     return true;
@@ -46,11 +47,11 @@ export function AudioSettingsProvider({ children }: { children: ReactNode }) {
   const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(getInitialSoundEffectsEnabledState);
 
   useEffect(() => {
-    window.localStorage.setItem(MUSIC_ENABLED_STORAGE_KEY, String(musicEnabled));
+    getBrowserStorage().setItem(MUSIC_ENABLED_STORAGE_KEY, String(musicEnabled));
   }, [musicEnabled]);
 
   useEffect(() => {
-    window.localStorage.setItem(SOUND_EFFECTS_ENABLED_STORAGE_KEY, String(soundEffectsEnabled));
+    getBrowserStorage().setItem(SOUND_EFFECTS_ENABLED_STORAGE_KEY, String(soundEffectsEnabled));
   }, [soundEffectsEnabled]);
 
   const value = useMemo<AudioSettingsContextValue>(() => ({

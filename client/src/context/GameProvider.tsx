@@ -33,6 +33,7 @@ import {
 import { getLocalFriendGroupQuestionSeeds } from '@/services/friendGroupQuestionSeeds';
 import { supabase } from '@/services/supabaseClient';
 import { useAuth } from '@/auth/AuthContext';
+import { getBrowserStorage } from '@/shared/services/browserStorage';
 import {
   createInitialState,
   generateRoomCode,
@@ -123,6 +124,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
   const [state, setState] = useState<GameState>(createInitialState);
+  const storage = getBrowserStorage();
 
   const stateRef = useRef(state);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -165,11 +167,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
 
       persistSnapshotTimeoutRef.current = window.setTimeout(() => {
-        window.localStorage.setItem(getSnapshotStorageKey(state.roomCode), JSON.stringify(stateRef.current));
+        storage.setItem(getSnapshotStorageKey(state.roomCode), JSON.stringify(stateRef.current));
         persistSnapshotTimeoutRef.current = null;
       }, 150);
     }
-  }, [state]);
+  }, [state, storage]);
 
   const clearScheduledReconnect = useCallback(() => {
     if (reconnectTimeoutRef.current !== null) {
@@ -612,8 +614,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
             window.clearInterval(pendingJoin.retryIntervalId);
           }
           pendingJoinRef.current = null;
-          window.localStorage.setItem(STORAGE_KEYS.roomCode, incomingState.roomCode);
-          window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+          storage.setItem(STORAGE_KEYS.roomCode, incomingState.roomCode);
+          storage.removeItem(STORAGE_KEYS.hostRoomCode);
           pendingJoin.resolve(pendingJoin.playerId);
         }
       })
@@ -702,14 +704,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
               ?? readStoredSnapshot(roomCode)
               ?? createRealtimeRoomState(roomCode);
 
-            window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
-            window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
+            storage.setItem(STORAGE_KEYS.roomCode, roomCode);
+            storage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
 
             setLocalState(initialState);
             broadcastSnapshot(initialState, 'host-subscribed');
           } else {
-            window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
-            window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+            storage.setItem(STORAGE_KEYS.roomCode, roomCode);
+            storage.removeItem(STORAGE_KEYS.hostRoomCode);
 
             if (options.playerId && options.playerName) {
               sendJoinHandshake(roomCode, options.playerId, options.playerName);
@@ -806,10 +808,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         : location.pathname.startsWith('/play')
           ? 'player'
           : 'neutral';
-    const storedRoomCode = window.localStorage.getItem(STORAGE_KEYS.roomCode);
-    const hostRoomCode = window.localStorage.getItem(STORAGE_KEYS.hostRoomCode);
-    const storedPlayerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
-    const storedPlayerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
+    const storedRoomCode = storage.getItem(STORAGE_KEYS.roomCode);
+    const hostRoomCode = storage.getItem(STORAGE_KEYS.hostRoomCode);
+    const storedPlayerId = storage.getItem(STORAGE_KEYS.playerId);
+    const storedPlayerName = storage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
     const activeSession = activeSessionRef.current;
     const hasLiveChannel = channelStatusRef.current === 'subscribed' && channelRef.current !== null;
 
@@ -1000,8 +1002,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const storedPlayerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
-      const storedPlayerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
+      const storedPlayerId = storage.getItem(STORAGE_KEYS.playerId);
+      const storedPlayerName = storage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
       const shouldReassertPlayer = Boolean(
         storedPlayerId
         && storedPlayerName
@@ -1081,8 +1083,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     isCreatingRoomRef.current = true;
     const previousState = stateRef.current;
-    const previousStoredRoomCode = window.localStorage.getItem(STORAGE_KEYS.roomCode);
-    const previousStoredHostRoomCode = window.localStorage.getItem(STORAGE_KEYS.hostRoomCode);
+    const previousStoredRoomCode = storage.getItem(STORAGE_KEYS.roomCode);
+    const previousStoredHostRoomCode = storage.getItem(STORAGE_KEYS.hostRoomCode);
 
     try {
       for (let attempt = 0; attempt < HOST_ROOM_CLAIM_RETRIES; attempt += 1) {
@@ -1093,8 +1095,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           customPacks: resetCustomPackSelections(previousState.customPacks),
         };
 
-        window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
-        window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
+        storage.setItem(STORAGE_KEYS.roomCode, roomCode);
+        storage.setItem(STORAGE_KEYS.hostRoomCode, roomCode);
         setLocalState(initialState);
 
         try {
@@ -1133,16 +1135,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
 
     const normalizedRoomCode = roomCode.trim().toUpperCase();
-    const storedPlayerName = window.localStorage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
+    const storedPlayerName = storage.getItem(STORAGE_KEYS.playerName)?.trim() ?? '';
     const normalizedName = (playerName.trim() || storedPlayerName).slice(0, 16);
 
     if (!normalizedRoomCode || !normalizedName) {
       return null;
     }
 
-    const playerId = window.localStorage.getItem(STORAGE_KEYS.playerId) ?? crypto.randomUUID();
-    window.localStorage.setItem(STORAGE_KEYS.playerId, playerId);
-    window.localStorage.setItem(STORAGE_KEYS.playerName, normalizedName);
+    const playerId = storage.getItem(STORAGE_KEYS.playerId) ?? crypto.randomUUID();
+    storage.setItem(STORAGE_KEYS.playerId, playerId);
+    storage.setItem(STORAGE_KEYS.playerName, normalizedName);
 
     return new Promise(resolve => {
       const timeoutId = window.setTimeout(() => {
@@ -1154,7 +1156,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
 
         void teardownChannel();
-        window.localStorage.removeItem(STORAGE_KEYS.roomCode);
+        storage.removeItem(STORAGE_KEYS.roomCode);
         resolve(null);
       }, JOIN_REQUEST_TIMEOUT_MS);
 
@@ -1205,7 +1207,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [sendJoinHandshake, subscribeToRoom, teardownChannel]);
 
   const leaveRoom = useCallback(async () => {
-    const playerId = window.localStorage.getItem(STORAGE_KEYS.playerId);
+    const playerId = storage.getItem(STORAGE_KEYS.playerId);
 
     if (!isHostRef.current && playerId) {
       sendBroadcast('leave-room', { playerId });
@@ -2766,21 +2768,24 @@ function getTimeRemaining(roundDeadlineAt: string): number {
 }
 
 function clearStoredRoomSession() {
-  window.localStorage.removeItem(STORAGE_KEYS.roomCode);
-  window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+  const storage = getBrowserStorage();
+  storage.removeItem(STORAGE_KEYS.roomCode);
+  storage.removeItem(STORAGE_KEYS.hostRoomCode);
 }
 
 function restoreStoredRoomSession(roomCode: string | null, hostRoomCode: string | null) {
+  const storage = getBrowserStorage();
+
   if (roomCode) {
-    window.localStorage.setItem(STORAGE_KEYS.roomCode, roomCode);
+    storage.setItem(STORAGE_KEYS.roomCode, roomCode);
   } else {
-    window.localStorage.removeItem(STORAGE_KEYS.roomCode);
+    storage.removeItem(STORAGE_KEYS.roomCode);
   }
 
   if (hostRoomCode) {
-    window.localStorage.setItem(STORAGE_KEYS.hostRoomCode, hostRoomCode);
+    storage.setItem(STORAGE_KEYS.hostRoomCode, hostRoomCode);
   } else {
-    window.localStorage.removeItem(STORAGE_KEYS.hostRoomCode);
+    storage.removeItem(STORAGE_KEYS.hostRoomCode);
   }
 }
 
@@ -2818,7 +2823,7 @@ async function detectOtherHostPresence(
 }
 
 function readStoredSnapshot(roomCode: string): GameState | null {
-  const rawSnapshot = window.localStorage.getItem(getSnapshotStorageKey(roomCode));
+  const rawSnapshot = getBrowserStorage().getItem(getSnapshotStorageKey(roomCode));
 
   if (!rawSnapshot) {
     return null;
