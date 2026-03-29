@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { HostApp } from '@/host/HostApp';
 import { PhoneApp } from '@/phone/PhoneApp';
 import { GameProvider } from '@/context/GameProvider';
@@ -31,6 +32,19 @@ function RootRedirect() {
   }
 
   return <Navigate to={user ? '/host' : '/auth'} replace />;
+}
+
+function PhoneRouteGuard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isPhoneDevice() && !location.pathname.startsWith('/play')) {
+      navigate('/play', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
+  return null;
 }
 
 function StartRoute() {
@@ -74,6 +88,7 @@ export function App() {
     <AppFlowProvider>
       <AuthProvider>
         <GameProvider>
+          <PhoneRouteGuard />
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/start" element={<StartRoute />} />
