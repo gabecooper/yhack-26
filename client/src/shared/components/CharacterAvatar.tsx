@@ -1,4 +1,4 @@
-import { HEIST_CHARACTERS } from '@/constants/characters';
+import { HEIST_CHARACTERS, getCharacterAvatarVisual } from '@/constants/characters';
 
 interface CharacterAvatarProps {
   characterIndex: number;
@@ -16,8 +16,9 @@ export function CharacterAvatar({
   isDisconnected = false,
 }: CharacterAvatarProps) {
   const character = HEIST_CHARACTERS[characterIndex] ?? HEIST_CHARACTERS[0];
+  const avatarVisual = getCharacterAvatarVisual(characterIndex);
   const outerSize = size;
-  const innerSize = size * 0.75;
+  const innerSize = size * 0.9;
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -26,21 +27,24 @@ export function CharacterAvatar({
         style={{
           width: outerSize,
           height: outerSize,
-          background: `linear-gradient(135deg, ${character.accentPrimary}, ${character.accentSecondary})`,
           opacity: isEliminated ? 0.4 : isDisconnected ? 0.6 : 1,
           filter: isEliminated ? 'grayscale(80%)' : 'none',
         }}
       >
         <div
-          className="rounded-full flex items-center justify-center bg-vault-dark"
+          className="relative overflow-hidden rounded-full"
           style={{ width: innerSize, height: innerSize }}
         >
-          <span
-            className="font-title select-none"
-            style={{ fontSize: size * 0.38, color: character.accentSecondary }}
-          >
-            {character.initial}
-          </span>
+          <img
+            src={avatarVisual.image}
+            alt=""
+            aria-hidden="true"
+            className="absolute bottom-0 left-1/2 h-full w-full object-contain object-bottom"
+            style={{
+              transform: `translateX(-50%) scale(${avatarVisual.scale})`,
+              transformOrigin: 'bottom center',
+            }}
+          />
         </div>
         {isEliminated && (
           <div className="absolute inset-0 flex items-center justify-center">

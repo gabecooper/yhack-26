@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
-import { CharacterAvatar } from '@/shared/components/CharacterAvatar';
+import { CharacterPortraitCard } from '@/shared/components/CharacterPortraitCard';
 import { ScoreBoard } from '../components/ScoreBoard';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
@@ -41,17 +41,14 @@ export function LeaderboardView() {
                     transition={{ delay: 0.45, duration: 0.7 }}
                     className="my-6 flex justify-center"
                   >
-                    <CharacterAvatar
+                    <CharacterPortraitCard
                       characterIndex={leader.characterIndex}
-                      size={128}
-                      showRole
+                      name={leader.name}
+                      size="xl"
                       isEliminated={leader.isEliminated}
                     />
                   </motion.div>
 
-                  <h1 className="font-title text-5xl text-vault-gold md:text-6xl">
-                    {leader.name}
-                  </h1>
                   <p className="mt-4 font-ui text-lg leading-relaxed text-gray-300">
                     Sitting on top of the crew with the strongest score after the last question.
                   </p>
@@ -103,7 +100,7 @@ export function LeaderboardView() {
               initial={{ x: 28, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.28 }}
-              className="rounded-[2rem] border border-white/10 bg-black/15 px-6 py-7"
+              className="flex h-full flex-col justify-center rounded-[2rem] border border-white/10 bg-black/15 px-6 py-7 text-center"
             >
               <div className="mb-6">
                 <p className="font-ui text-xs font-semibold uppercase tracking-[0.3em] text-white/75">

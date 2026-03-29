@@ -14,8 +14,7 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
   const { togglePdf, uploadPdf } = useGameActions();
 
   const handleUploadClick = () => {
-    const name = `Study Material ${pdfs.length + 1}.pdf`;
-    uploadPdf(name, null);
+    uploadPdf(`Study Material ${pdfs.length + 1}.pdf`, null);
   };
 
   return (

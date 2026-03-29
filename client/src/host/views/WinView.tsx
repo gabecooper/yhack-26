@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
-import { CharacterAvatar } from '@/shared/components/CharacterAvatar';
+import { CharacterPortraitCard } from '@/shared/components/CharacterPortraitCard';
 import { ScoreBoard } from '../components/ScoreBoard';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
@@ -47,10 +47,10 @@ export function WinView({ isGameOver }: WinViewProps) {
                   transition={{ delay: 0.55, duration: 0.7 }}
                   className="mb-6 flex justify-center"
                 >
-                  <CharacterAvatar
+                  <CharacterPortraitCard
                     characterIndex={winner.characterIndex}
-                    size={132}
-                    showRole
+                    name={winner.name}
+                    size="xl"
                     isEliminated={winner.isEliminated}
                   />
                 </motion.div>

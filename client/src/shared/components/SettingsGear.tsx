@@ -21,7 +21,12 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
   const { roomCode } = useGameState();
   const { setPhase } = useGameActions();
   const isHostRoute = location.pathname.startsWith('/host');
-  const canEndGame = isHostRoute && Boolean(roomCode);
+  const hasHostedRoomCode = typeof window !== 'undefined'
+    && window.localStorage.getItem('heist_host_room_code') === roomCode;
+  const isHostSession = typeof window !== 'undefined'
+    && Boolean(roomCode)
+    && (hasHostedRoomCode || (isHostRoute && Boolean(user)));
+  const canEndGame = isHostSession;
   const gearPositionStyle =
     side === 'left'
       ? {

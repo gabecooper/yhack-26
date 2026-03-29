@@ -1,28 +1,12 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
+import { CharacterPortraitCard } from '@/shared/components/CharacterPortraitCard';
 import { useAppFlow } from '@/app/AppFlowContext';
 import { POLYMARKET_CATEGORIES, getPolymarketCategoryName } from '@/services/polymarket/categories';
 import { PdfManager } from '../components/PdfManager';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
-import brownStudent from '@/assets/characters/brown-student.png';
-import harvardInfluencer from '@/assets/characters/harvard-influencer.png';
-import mitFounder from '@/assets/characters/mit-founder.png';
-import princetonNerd from '@/assets/characters/princeton-nerd.png';
-import stanfordRaccoon from '@/assets/characters/stanford-raccoon.png';
-import whartonRaccoon from '@/assets/characters/wharton-raccoon.png';
-import yalePortrait from '@/assets/characters/yale-portrait.png';
-
-const SCHOOL_CREW = [
-  { label: 'Brown', image: brownStudent, scale: 1 },
-  { label: 'Harvard', image: harvardInfluencer, scale: 2 },
-  { label: 'MIT', image: mitFounder, scale: 2 },
-  { label: 'Princeton', image: princetonNerd, scale: 2 },
-  { label: 'Stanford', image: stanfordRaccoon, scale: 2 },
-  { label: 'Wharton', image: whartonRaccoon, scale: 2 },
-  { label: 'Yale', image: yalePortrait, scale: 2 },
-];
 
 const FRIEND_GROUP_PACKS = [
   'Inside jokes',
@@ -30,13 +14,14 @@ const FRIEND_GROUP_PACKS = [
   'Campus lore',
 ];
 
-type ScrapSectionId = 'polymarket' | 'coursework' | 'friends';
+type ScrapSectionId = 'polymarket' | 'coursework' | 'friends' | 'misc';
 
 const getCourseworkDisplayName = (filename: string) => filename.replace(/\.[^/.]+$/, '');
 const INITIAL_OPEN_SCRAP_SECTIONS: Record<ScrapSectionId, boolean> = {
   polymarket: false,
   coursework: true,
   friends: false,
+  misc: false,
 };
 
 export function RoomView() {
@@ -62,11 +47,10 @@ export function RoomView() {
   ];
   const playerSlots = Array.from({ length: GAME_CONFIG.maxPlayers }, (_unused, slotIndex) => {
     const player = players.find(candidate => candidate.characterIndex === slotIndex) ?? null;
-    const crewMember = SCHOOL_CREW[slotIndex % SCHOOL_CREW.length];
 
     return {
       player,
-      crewMember,
+      characterIndex: player?.characterIndex ?? slotIndex,
       key: player?.id ?? `open-slot-${slotIndex}`,
     };
   });
@@ -257,6 +241,38 @@ export function RoomView() {
                   </div>
                 )}
               </section>
+
+              <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                <button
+                  type="button"
+                  onClick={() => toggleScrapSection('misc')}
+                  className="flex w-full items-start justify-between px-4 py-4 text-left"
+                >
+                  <div>
+                    <h3 className="font-ui text-sm font-bold uppercase tracking-[0.25em] text-white/90">
+                      Misc Scraps
+                    </h3>
+                    <p className="mt-1 font-ui text-sm text-gray-400">
+                      More oddball source packs are on the way.
+                    </p>
+                  </div>
+                  <span className="font-ui text-xl leading-none text-white/70">
+                    {openScrapSections.misc ? '−' : '+'}
+                  </span>
+                </button>
+
+                {openScrapSections.misc && (
+                  <div className="border-t border-white/10 px-4 py-4">
+                    <button
+                      type="button"
+                      disabled
+                      className="rounded-full border border-white/15 px-3 py-2 font-ui text-sm text-white/85"
+                    >
+                      Coming soon
+                    </button>
+                  </div>
+                )}
+              </section>
               </div>
             </div>
           </motion.div>
@@ -265,9 +281,9 @@ export function RoomView() {
             initial={{ x: 20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="grid flex-1 grid-cols-4 grid-rows-2 gap-x-3 gap-y-2 overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
+            className="grid flex-1 grid-cols-4 grid-rows-2 gap-x-3 gap-y-[0.45rem] overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
           >
-            {playerSlots.map(({ key, player, crewMember }, slotIndex) => {
+            {playerSlots.map(({ key, player, characterIndex }, slotIndex) => {
               const isClickableDevSlot = isDevMode && !player;
 
               return (
@@ -280,26 +296,24 @@ export function RoomView() {
                     }
                   }}
                   disabled={!isClickableDevSlot}
-                  className={`flex h-36 items-end justify-center rounded-2xl transition-colors ${
+                  className={`flex h-52 items-end justify-center rounded-2xl transition-colors ${
                     isClickableDevSlot
                       ? 'cursor-pointer hover:bg-white/5'
                       : 'cursor-default'
                   }`}
                   aria-label={
                     isClickableDevSlot
-                      ? `Add a simulated player to the ${crewMember.label} slot`
+                      ? `Add a simulated player to slot ${slotIndex + 1}`
                       : undefined
                   }
                 >
-                  <img
-                    src={crewMember.image}
-                    alt={`${crewMember.label} raccoon`}
-                    className="h-32 w-24 object-contain object-bottom"
-                    style={{
-                      transform: `scale(${crewMember.scale})`,
-                      transformOrigin: 'bottom center',
-                      filter: player ? 'none' : 'grayscale(100%)',
-                    }}
+                  <CharacterPortraitCard
+                    characterIndex={characterIndex}
+                    name={player?.name}
+                    size="md"
+                    imageScaleMultiplier={1.3}
+                    isDimmed={!player}
+                    nameVariant="heading"
                   />
                 </button>
               );

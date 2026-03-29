@@ -1,17 +1,12 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { HostLayout } from '@/shared/components/HostLayout';
-import { useGameActions, useGameState } from '@/context/GameContext';
+import { useGameActions } from '@/context/GameContext';
 import lobbyBackground from '@/assets/optimized/lobbyv2.webp';
 
 export function HomeView() {
   const navigate = useNavigate();
-  const { pdfs } = useGameState();
-  const { createRoom, uploadPdf } = useGameActions();
-
-  const handleUploadPdf = () => {
-    uploadPdf(`Study Material ${pdfs.length + 1}.pdf`, null);
-  };
+  const { createRoom } = useGameActions();
 
   return (
     <HostLayout showBackground={false}>
@@ -53,9 +48,6 @@ export function HomeView() {
               className="vault-button-secondary w-72 text-xl py-4"
             >
               Join Room
-            </button>
-            <button onClick={handleUploadPdf} className="vault-button-secondary w-72 text-xl py-4">
-              Upload PDF
             </button>
           </motion.div>
         </div>

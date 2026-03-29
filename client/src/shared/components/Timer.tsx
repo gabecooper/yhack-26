@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTickingAudio } from '@/shared/hooks/useTickingAudio';
 
 interface TimerProps {
   timeRemaining: number;
@@ -7,12 +8,19 @@ interface TimerProps {
 }
 
 export function Timer({ timeRemaining, totalTime, size = 140 }: TimerProps) {
+  const safeTotalTime = totalTime > 0 ? totalTime : 1;
   const center = size / 2;
   const radius = (size - 20) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, Math.min(1, timeRemaining / totalTime));
+  const progress = Math.max(0, Math.min(1, timeRemaining / safeTotalTime));
   const offset = circumference * (1 - progress);
   const isUrgent = timeRemaining <= 5;
+
+  useTickingAudio({
+    enabled: timeRemaining > 0,
+    timeRemaining,
+    totalTime: safeTotalTime,
+  });
 
   const tickMarks = Array.from({ length: 60 }, (_, i) => {
     const angle = ((i * 6 - 90) * Math.PI) / 180;

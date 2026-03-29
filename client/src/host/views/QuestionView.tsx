@@ -1,7 +1,25 @@
+import { useEffect, useMemo } from 'react';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { LockTimer } from '@/shared/components/LockTimer';
 import { useGameState } from '@/context/GameContext';
+import { playQuestionNarration, stopQuestionNarration } from '@/services/questionNarration';
+import b1Bg from '@/assets/backgrounds/b1.png';
+import b2Bg from '@/assets/backgrounds/b2.png';
+import b3Bg from '@/assets/backgrounds/b3.png';
+import b4Bg from '@/assets/backgrounds/b4.png';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
+
+const QUESTION_BACKGROUNDS = [v4RoofBg, b1Bg, b2Bg, b3Bg, b4Bg];
+
+function getBackgroundIndex(questionId: string) {
+  let hash = 0;
+
+  for (let index = 0; index < questionId.length; index += 1) {
+    hash = (hash * 31 + questionId.charCodeAt(index)) >>> 0;
+  }
+
+  return hash % QUESTION_BACKGROUNDS.length;
+}
 
 export function QuestionView() {
   const { currentQuestion, timerDuration, roundDeadlineAt } = useGameState();
@@ -12,10 +30,30 @@ export function QuestionView() {
     { rotate: -2, offsetX: -8 },
   ];
 
+  const backgroundImage = useMemo(
+    () => currentQuestion
+      ? QUESTION_BACKGROUNDS[getBackgroundIndex(currentQuestion.id)]
+      : v4RoofBg,
+    [currentQuestion?.id]
+  );
+
+  useEffect(() => {
+    if (!currentQuestion) {
+      stopQuestionNarration();
+      return;
+    }
+
+    void playQuestionNarration(currentQuestion.id, currentQuestion.question);
+
+    return () => {
+      stopQuestionNarration();
+    };
+  }, [currentQuestion?.id, currentQuestion?.question]);
+
   if (!currentQuestion) return null;
 
   return (
-    <HostLayout backgroundImage={v4RoofBg} minimalSettingsGear>
+    <HostLayout backgroundImage={backgroundImage} minimalSettingsGear>
       <div className="flex-1 relative flex flex-row min-h-0">
         <section className="w-1/2 h-full shrink-0 flex items-center justify-center px-6 md:px-10">
           <div className="question-prompt w-4/5 max-w-full flex flex-col items-center text-center gap-4">

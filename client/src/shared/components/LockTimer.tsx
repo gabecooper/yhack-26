@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import lockDialImage from '@/assets/ui/lock-dial.png';
+import { useTickingAudio } from '@/shared/hooks/useTickingAudio';
 
 interface LockTimerProps {
   totalTime: number;
@@ -204,6 +205,13 @@ export function LockTimer({
   const fillRatio = 1 - remainingRatio;
   const fillDegrees = fillRatio * 360;
   const isUrgent = displayTimeRemaining <= 5;
+
+  useTickingAudio({
+    enabled: displayTimeRemaining > 0,
+    timeRemaining: displayTimeRemaining,
+    totalTime: safeTotalTime,
+    deadlineAt,
+  });
 
   return (
     <div

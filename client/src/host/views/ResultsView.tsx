@@ -5,6 +5,30 @@ import { useGameActions, useGameState } from '@/context/GameContext';
 import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
 import v4RoofBg from '@/assets/optimized/v4roof.webp';
 
+function getReactionLayout(playerCount: number) {
+  if (playerCount >= 7) {
+    return { columns: 4, gapPx: 6, scale: 0.58 };
+  }
+
+  if (playerCount >= 5) {
+    return { columns: 3, gapPx: 8, scale: 0.72 };
+  }
+
+  if (playerCount === 4) {
+    return { columns: 4, gapPx: 6, scale: 0.58 };
+  }
+
+  if (playerCount === 3) {
+    return { columns: 3, gapPx: 8, scale: 0.72 };
+  }
+
+  if (playerCount === 2) {
+    return { columns: 2, gapPx: 12, scale: 1 };
+  }
+
+  return { columns: 1, gapPx: 12, scale: 1 };
+}
+
 export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();
   const { advancePhase } = useGameActions();
@@ -21,6 +45,8 @@ export function ResultsView() {
 
   const correctAnswer = currentQuestion.choices[results.correctIndex];
   const answerMeta = getAnswerMeta(results.correctIndex);
+  const correctLayout = getReactionLayout(correctPlayers.length);
+  const wrongLayout = getReactionLayout(wrongPlayers.length);
 
   return (
     <HostLayout backgroundImage={v4RoofBg} minimalSettingsGear>
@@ -82,15 +108,21 @@ export function ResultsView() {
                 </p>
               </div>
 
-              <div className="flex min-h-[16rem] flex-wrap content-start justify-center gap-5">
+              <div
+                className="grid min-h-[16rem] w-full justify-items-center content-start"
+                style={{
+                  gridTemplateColumns: `repeat(${correctLayout.columns}, minmax(0, 1fr))`,
+                  gap: `${correctLayout.gapPx}px`,
+                }}
+              >
                 {correctPlayers.map(p => (
-                  <PlayerReaction key={p.id} player={p} isCorrect />
+                  <PlayerReaction
+                    key={p.id}
+                    player={p}
+                    isCorrect
+                    scale={correctLayout.scale}
+                  />
                 ))}
-                {correctPlayers.length === 0 && (
-                  <p className="font-ui text-center text-sm text-gray-500">
-                    Nobody got it right.
-                  </p>
-                )}
               </div>
             </motion.div>
 
@@ -114,15 +146,21 @@ export function ResultsView() {
                 </p>
               </div>
 
-              <div className="flex min-h-[16rem] flex-wrap content-start justify-center gap-5">
+              <div
+                className="grid min-h-[16rem] w-full justify-items-center content-start"
+                style={{
+                  gridTemplateColumns: `repeat(${wrongLayout.columns}, minmax(0, 1fr))`,
+                  gap: `${wrongLayout.gapPx}px`,
+                }}
+              >
                 {wrongPlayers.map(p => (
-                  <PlayerReaction key={p.id} player={p} isCorrect={false} />
+                  <PlayerReaction
+                    key={p.id}
+                    player={p}
+                    isCorrect={false}
+                    scale={wrongLayout.scale}
+                  />
                 ))}
-                {wrongPlayers.length === 0 && (
-                  <p className="font-ui text-center text-sm text-gray-500">
-                    Everyone nailed it.
-                  </p>
-                )}
               </div>
               <button
                 onClick={advancePhase}
