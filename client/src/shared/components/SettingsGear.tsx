@@ -15,12 +15,13 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
   const [isOpen, setIsOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isEndingGame, setIsEndingGame] = useState(false);
+  const [isReturningToLobby, setIsReturningToLobby] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { flow, clearFlow } = useAppFlow();
-  const { roomCode } = useGameState();
-  const { setPhase } = useGameActions();
+  const { roomCode, phase } = useGameState();
+  const { returnToLobby, setPhase } = useGameActions();
   const {
     musicEnabled,
     soundEffectsEnabled,
@@ -34,6 +35,7 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
     && Boolean(roomCode)
     && (hasHostedRoomCode || (isHostRoute && Boolean(user)));
   const canEndGame = isHostSession;
+  const canReturnToLobby = isHostSession && phase !== 'room';
   const gearPositionStyle =
     side === 'left'
       ? {
@@ -72,6 +74,17 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
       setIsOpen(false);
     } finally {
       setIsEndingGame(false);
+    }
+  };
+
+  const handleReturnToLobby = async () => {
+    setIsReturningToLobby(true);
+
+    try {
+      returnToLobby();
+      setIsOpen(false);
+    } finally {
+      setIsReturningToLobby(false);
     }
   };
 
@@ -145,6 +158,23 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
               {canEndGame && (
                 <div className="mt-6 rounded-2xl bg-red-50 px-4 py-3 font-ui">
                   <p className="text-xs uppercase tracking-[0.24em] text-[#7f1d1d]">Host Controls</p>
+                  {canReturnToLobby && (
+                    <>
+                      <p className="mt-2 text-sm text-[#7f1d1d]">
+                        Cancel the current flow safely and send everyone back to the lobby.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleReturnToLobby();
+                        }}
+                        disabled={isReturningToLobby || isEndingGame}
+                        className="mt-4 w-full rounded-xl border border-[#7f1d1d]/10 bg-white px-4 py-3 text-base font-semibold text-[#7f1d1d] transition-colors hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isReturningToLobby ? 'Returning to Lobby...' : 'Back to Lobby'}
+                      </button>
+                    </>
+                  )}
                   <p className="mt-2 text-sm text-[#991b1b]">
                     End the current game and send everyone back to the home screen.
                   </p>
@@ -153,7 +183,7 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
                     onClick={() => {
                       void handleEndGame();
                     }}
-                    disabled={isEndingGame}
+                    disabled={isEndingGame || isReturningToLobby}
                     className="mt-4 w-full rounded-xl border border-[#7f1d1d]/10 bg-[#991b1b] px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-[#7f1d1d] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isEndingGame ? 'Ending Game...' : 'End Game'}

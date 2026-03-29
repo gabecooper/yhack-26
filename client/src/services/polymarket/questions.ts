@@ -158,5 +158,22 @@ export async function fetchPolymarketQuestionDeck(categoryTags: string[], totalQ
     uniqueTags.map(tag => fetchPolymarketQuestions(tag, perCategory))
   );
 
-  return shuffle(questionGroups.flat()).slice(0, totalQuestions);
+  const shuffledGroups = questionGroups.map(group => shuffle(group));
+  const baseQuota = Math.floor(totalQuestions / uniqueTags.length);
+  const remainder = totalQuestions % uniqueTags.length;
+  const quotas = shuffledGroups.map((_group, index) => baseQuota + (index < remainder ? 1 : 0));
+  const selectedQuestions: Question[] = [];
+  const leftovers: Question[] = [];
+
+  shuffledGroups.forEach((group, index) => {
+    const quota = quotas[index];
+    selectedQuestions.push(...group.slice(0, quota));
+    leftovers.push(...group.slice(quota));
+  });
+
+  if (selectedQuestions.length < totalQuestions) {
+    selectedQuestions.push(...shuffle(leftovers).slice(0, totalQuestions - selectedQuestions.length));
+  }
+
+  return shuffle(selectedQuestions).slice(0, totalQuestions);
 }

@@ -233,30 +233,6 @@ export function MiscPackManager({ packs }: MiscPackManagerProps) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {UPLOAD_OPTIONS.map(option => (
-          <button
-            key={option.sourceType}
-            type="button"
-            onClick={() => handleChooseFile(option.sourceType)}
-            disabled={isUploading}
-            className={`${MISC_PILL_CLASS} border-white/15 text-white/85 hover:border-white/35 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".pdf,.txt,text/plain,application/pdf"
-        className="hidden"
-        onChange={event => {
-          void handleFileChange(event);
-        }}
-      />
-
       {packs.length > 0 && (
         <div className="space-y-2">
           <p className="font-ui text-xs font-semibold uppercase tracking-[0.24em] text-white/45">
@@ -278,7 +254,7 @@ export function MiscPackManager({ packs }: MiscPackManagerProps) {
                       toggleCustomPack(pack.id, !pack.enabled);
                     }}
                     disabled={isDeleting}
-                    className={`${MISC_PILL_CLASS} pr-9 ${
+                    className={`${MISC_PILL_CLASS} group-hover:pr-9 transition-[padding,color,border-color,background-color,opacity] duration-200 ${
                       pack.enabled
                         ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
                         : 'border-white/15 text-white/85 hover:border-white/35 hover:bg-white/5'
@@ -297,7 +273,7 @@ export function MiscPackManager({ packs }: MiscPackManagerProps) {
                       setPendingDeletePackId(pack.id);
                     }}
                     disabled={isDeleting}
-                    className="pointer-events-none invisible absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/35 font-ui text-xs font-bold uppercase text-white/70 opacity-0 transition-all group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 hover:border-white/25 hover:bg-black/55 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="pointer-events-none invisible absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/35 font-ui text-xs font-bold uppercase text-white/70 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 hover:border-white/25 hover:bg-black/55 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     x
                   </button>
@@ -308,6 +284,30 @@ export function MiscPackManager({ packs }: MiscPackManagerProps) {
 
         </div>
       )}
+
+      <div className="flex flex-wrap gap-2">
+        {UPLOAD_OPTIONS.map(option => (
+          <button
+            key={option.sourceType}
+            type="button"
+            onClick={() => handleChooseFile(option.sourceType)}
+            disabled={isUploading}
+            className="max-w-full whitespace-normal break-words rounded-full border border-dashed border-white/25 bg-white/5 px-4 py-2 text-center font-ui text-sm text-gray-300 transition-colors hover:border-white/45 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.txt,text/plain,application/pdf"
+        className="hidden"
+        onChange={event => {
+          void handleFileChange(event);
+        }}
+      />
 
       <AnimatePresence>
         {pendingEmptyDocumentConfirmation && (

@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { HostApp } from '@/host/HostApp';
 import { PhoneApp } from '@/phone/PhoneApp';
 import { GameProvider } from '@/context/GameProvider';
@@ -7,7 +6,6 @@ import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { AuthView } from '@/auth/views/AuthView';
 import { RequireAuth } from '@/auth/components/RequireAuth';
 import { AppFlowProvider, useAppFlow } from '@/app/AppFlowContext';
-import { isPhoneDevice } from '@/app/isPhoneDevice';
 import { StartFlowView } from '@/app/views/StartFlowView';
 import { RealStartView } from '@/app/views/RealStartView';
 import { AudioSettingsProvider } from '@/shared/context/AudioSettingsContext';
@@ -26,10 +24,6 @@ function RootRedirect() {
     return null;
   }
 
-  if (isPhoneDevice()) {
-    return <Navigate to="/play" replace />;
-  }
-
   if (!flow) {
     return <Navigate to="/start" replace />;
   }
@@ -41,48 +35,19 @@ function RootRedirect() {
   return <Navigate to={user ? '/host' : '/auth'} replace />;
 }
 
-function PhoneRouteGuard() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (isPhoneDevice() && !location.pathname.startsWith('/play')) {
-      navigate('/play', { replace: true });
-    }
-  }, [location.pathname, navigate]);
-
-  return null;
-}
-
 function StartRoute() {
-  if (isPhoneDevice()) {
-    return <Navigate to="/play" replace />;
-  }
-
   return <StartFlowView />;
 }
 
 function RealRoute() {
-  if (isPhoneDevice()) {
-    return <Navigate to="/play" replace />;
-  }
-
   return <RealStartView />;
 }
 
 function AuthRoute() {
-  if (isPhoneDevice()) {
-    return <Navigate to="/play" replace />;
-  }
-
   return <AuthView />;
 }
 
 function HostRoute() {
-  if (isPhoneDevice()) {
-    return <Navigate to="/play" replace />;
-  }
-
   return (
     <RequireAuth>
       <HostApp />
@@ -97,7 +62,6 @@ export function App() {
         <AuthProvider>
           <GameProvider>
             <AccentButtonClickSound />
-            <PhoneRouteGuard />
             <Routes>
               <Route path="/" element={<RootRedirect />} />
               <Route path="/start" element={<StartRoute />} />

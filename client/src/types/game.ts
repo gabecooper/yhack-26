@@ -14,12 +14,16 @@ export type GamePhase =
 export interface Question {
   id: string;
   question: string;
+  displaySubtitle?: string;
   choices: string[];
   correct: number;
   keywords: string[];
   category?: string;
   source?: string | null;
   probabilities?: number[];
+  answerPool?: string[];
+  profileResponseMode?: 'multiple-choice' | 'free-text';
+  profileResponseMaxLength?: number;
 }
 
 export type CustomPackSourceType =
@@ -33,7 +37,8 @@ export type FriendGroupPackStyle =
   | 'funny'
   | 'kid-friendly'
   | 'for-friends'
-  | 'for-family';
+  | 'for-family'
+  | 'outta-pocket';
 
 export interface FriendGroupPackSettings {
   numQuestions: number;
@@ -53,12 +58,20 @@ export interface CustomQuestionPack {
   createdAt: string | null;
 }
 
+export interface PendingFriendGroupPackDraft {
+  id: string;
+  suggestedLabel: string;
+  questions: Question[];
+  settings: FriendGroupPackSettings;
+}
+
 export interface GameStartOptions {
   polymarketCategories?: string[];
   customQuestions?: Question[];
   friendGroupPack?: FriendGroupPackSettings | null;
   playerNames?: string[];
   playerIds?: string[];
+  saveFriendGroupPackAfterProfile?: boolean;
 }
 
 export interface QuestionResult {
@@ -66,11 +79,13 @@ export interface QuestionResult {
   playerAnswers: Record<string, number | null>;
 }
 
+export type ProfileResponseValue = number | string;
+
 export interface CustomResponseHistoryItem {
   questionId: string;
   question: string;
   choices: string[];
-  playerAnswers: Record<string, number | null>;
+  playerAnswers: Record<string, ProfileResponseValue | null>;
 }
 
 export interface MinigameState {
@@ -104,7 +119,7 @@ export interface GameState {
   players: PlayerState[];
   questionDeck: Question[];
   profileAssignments: Record<string, Question[]>;
-  profileResponses: Record<string, number[]>;
+  profileResponses: Record<string, ProfileResponseValue[]>;
   currentQuestion: Question | null;
   questionIndex: number;
   totalQuestions: number;
@@ -120,4 +135,7 @@ export interface GameState {
   isPreparingGame: boolean;
   preparationMessage: string | null;
   customResponseHistory: CustomResponseHistoryItem[];
+  activeFriendGroupPackSettings: FriendGroupPackSettings | null;
+  saveFriendGroupPackAfterProfile: boolean;
+  pendingFriendGroupPackDraft: PendingFriendGroupPackDraft | null;
 }

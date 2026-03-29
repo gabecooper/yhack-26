@@ -4,20 +4,29 @@ import { PhoneLayout } from '@/shared/components/PhoneLayout';
 import { useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
 
+const PLAYER_NAME_STORAGE_KEY = 'heist_player_name';
+const ROOM_CODE_STORAGE_KEY = 'heist_room_code';
+
 interface JoinViewProps {
   onJoin: (playerId: string) => void;
 }
 
 export function JoinView({ onJoin }: JoinViewProps) {
-  const [roomCode, setRoomCode] = useState('');
-  const [playerName, setPlayerName] = useState('');
+  const storedPlayerName = window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.slice(0, 16) ?? '';
+  const [roomCode, setRoomCode] = useState(() =>
+    window.localStorage.getItem(ROOM_CODE_STORAGE_KEY)?.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength) ?? ''
+  );
+  const [playerName, setPlayerName] = useState(() =>
+    storedPlayerName
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const { joinRoom } = useGameActions();
+  const effectivePlayerName = playerName.trim() || storedPlayerName;
 
   const canJoin =
     roomCode.length === GAME_CONFIG.roomCodeLength
-    && playerName.trim().length > 0
+    && effectivePlayerName.length > 0
     && !isJoining;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -26,7 +35,10 @@ export function JoinView({ onJoin }: JoinViewProps) {
     setErrorMessage(null);
     setIsJoining(true);
 
-    const id = await joinRoom(roomCode.toUpperCase(), playerName.trim());
+    window.localStorage.setItem(ROOM_CODE_STORAGE_KEY, roomCode.toUpperCase());
+    window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, effectivePlayerName);
+
+    const id = await joinRoom(roomCode.toUpperCase(), effectivePlayerName);
     setIsJoining(false);
 
     if (!id) {
@@ -57,6 +69,11 @@ export function JoinView({ onJoin }: JoinViewProps) {
           <p className="mt-5 font-ui text-base text-white/60">
             Enter the host code and your name to join.
           </p>
+          {storedPlayerName && (
+            <p className="mt-2 font-ui text-sm text-white/50">
+              Re-enter the same code to reclaim your spot as {storedPlayerName}.
+            </p>
+          )}
         </motion.div>
 
         <motion.form
@@ -73,7 +90,11 @@ export function JoinView({ onJoin }: JoinViewProps) {
             <input
               type="text"
               value={roomCode}
-              onChange={e => setRoomCode(e.target.value.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength))}
+              onChange={e => {
+                const nextRoomCode = e.target.value.toUpperCase().slice(0, GAME_CONFIG.roomCodeLength);
+                setRoomCode(nextRoomCode);
+                window.localStorage.setItem(ROOM_CODE_STORAGE_KEY, nextRoomCode);
+              }}
               placeholder="ABCD"
               maxLength={GAME_CONFIG.roomCodeLength}
               className="minimal-input text-center font-title text-4xl tracking-[0.38em] text-vault-gold placeholder:text-white/20"
@@ -91,7 +112,11 @@ export function JoinView({ onJoin }: JoinViewProps) {
             <input
               type="text"
               value={playerName}
-              onChange={e => setPlayerName(e.target.value.slice(0, 16))}
+              onChange={e => {
+                const nextPlayerName = e.target.value.slice(0, 16);
+                setPlayerName(nextPlayerName);
+                window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, nextPlayerName);
+              }}
               placeholder="Enter name..."
               maxLength={16}
               className="minimal-input text-center font-ui text-xl"

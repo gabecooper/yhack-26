@@ -4,6 +4,7 @@ import { HostLayout } from '@/shared/components/HostLayout';
 import { PlayerReaction } from '../components/PlayerReaction';
 import { useGameActions, useGameState } from '@/context/GameContext';
 import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
 import {
   getRandomPresetQuip,
   getSpecialQuip,
@@ -51,6 +52,7 @@ function pickRandomItem<T>(items: T[]) {
 export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();
   const { advancePhase } = useGameActions();
+  const { soundEffectsEnabled } = useAudioSettings();
   const activePlayers = players.filter(p => !p.isEliminated);
   const correctPlayers = activePlayers.filter(
     p => results && results.playerAnswers[p.id] === results.correctIndex
@@ -181,17 +183,17 @@ export function ResultsView() {
   ]);
 
   useEffect(() => {
-    if (!currentQuestion || !resultsQuip || !isQuipReady) {
+    if (!currentQuestion || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
       return;
     }
 
     void getNarrationAudioUrl(`results-quip:${currentQuestion.id}`, resultsQuip).catch(error => {
       console.warn('Unable to prewarm results narration', error);
     });
-  }, [currentQuestion, isQuipReady, resultsQuip]);
+  }, [currentQuestion, isQuipReady, resultsQuip, soundEffectsEnabled]);
 
   useEffect(() => {
-    if (!currentQuestion || !resultsQuip || !isQuipReady) {
+    if (!currentQuestion || !resultsQuip || !isQuipReady || !soundEffectsEnabled) {
       stopNarration();
       return;
     }
@@ -206,7 +208,7 @@ export function ResultsView() {
       window.clearTimeout(timeoutId);
       stopNarration();
     };
-  }, [currentQuestion, isQuipReady, resultsQuip]);
+  }, [currentQuestion, isQuipReady, resultsQuip, soundEffectsEnabled]);
 
   if (!currentQuestion || !results) return null;
 

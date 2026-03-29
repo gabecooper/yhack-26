@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { isPhoneDevice } from './isPhoneDevice';
 
 export type AppFlow = 'dev' | 'real';
 
@@ -30,9 +29,6 @@ export function AppFlowProvider({ children }: { children: ReactNode }) {
 
     if (storedFlow === 'dev' || storedFlow === 'real') {
       setFlow(storedFlow);
-    } else if (isPhoneDevice()) {
-      window.localStorage.setItem(STORAGE_KEY, 'real');
-      setFlow('real');
     }
 
     setIsReady(true);

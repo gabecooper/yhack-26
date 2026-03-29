@@ -50,6 +50,9 @@ export function getNarrationAudioUrl(audioId: string, text: string) {
 
     const audioBlob = await response.blob();
     return URL.createObjectURL(audioBlob);
+  }).catch(error => {
+    narrationCache.delete(cacheKey);
+    throw error;
   });
 
   narrationCache.set(cacheKey, request);
@@ -79,6 +82,11 @@ export async function playNarration(audioId: string, text: string) {
     const narrationAudio = new Audio(audioUrl);
     narrationAudio.preload = 'auto';
     narrationAudio.volume = 0.9;
+    narrationAudio.addEventListener('ended', () => {
+      if (activeNarrationAudio === narrationAudio) {
+        activeNarrationAudio = null;
+      }
+    }, { once: true });
     activeNarrationAudio = narrationAudio;
 
     await narrationAudio.play();

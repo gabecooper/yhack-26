@@ -63,6 +63,9 @@ export function createInitialState(): GameState {
     isPreparingGame: false,
     preparationMessage: null,
     customResponseHistory: [],
+    activeFriendGroupPackSettings: null,
+    saveFriendGroupPackAfterProfile: false,
+    pendingFriendGroupPackDraft: null,
   };
 }
 

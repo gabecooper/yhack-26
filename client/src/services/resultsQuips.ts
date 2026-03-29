@@ -126,6 +126,9 @@ export function getSpecialQuip(payload: {
     }
 
     return quip;
+  }).catch(error => {
+    specialQuipCache.delete(cacheKey);
+    throw error;
   });
 
   specialQuipCache.set(cacheKey, request);

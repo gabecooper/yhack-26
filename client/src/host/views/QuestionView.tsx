@@ -2,7 +2,12 @@ import { useEffect, useMemo } from 'react';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { LockTimer } from '@/shared/components/LockTimer';
 import { useGameState } from '@/context/GameContext';
-import { playQuestionNarration, stopQuestionNarration } from '@/services/questionNarration';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
+import {
+  getQuestionNarrationAudioUrl,
+  playQuestionNarration,
+  stopQuestionNarration,
+} from '@/services/questionNarration';
 import b1Bg from '@/assets/backgrounds/b1.png';
 import b2Bg from '@/assets/backgrounds/b2.png';
 import b3Bg from '@/assets/backgrounds/b3.png';
@@ -24,6 +29,7 @@ function getBackgroundIndex(questionId: string) {
 
 export function QuestionView() {
   const { currentQuestion, timerDuration, roundDeadlineAt } = useGameState();
+  const { soundEffectsEnabled } = useAudioSettings();
   const answerRowStyles = [
     { rotate: 3, offsetX: 0 },
     { rotate: 1, offsetX: -18 },
@@ -39,10 +45,14 @@ export function QuestionView() {
   );
 
   useEffect(() => {
-    if (!currentQuestion) {
+    if (!currentQuestion || !soundEffectsEnabled) {
       stopQuestionNarration();
       return;
     }
+
+    void getQuestionNarrationAudioUrl(currentQuestion.id, currentQuestion.question).catch(error => {
+      console.warn('Unable to prewarm question narration', error);
+    });
 
     const narrationTimeoutId = window.setTimeout(() => {
       void playQuestionNarration(currentQuestion.id, currentQuestion.question);
@@ -52,7 +62,7 @@ export function QuestionView() {
       window.clearTimeout(narrationTimeoutId);
       stopQuestionNarration();
     };
-  }, [currentQuestion?.id, currentQuestion?.question]);
+  }, [currentQuestion?.id, currentQuestion?.question, soundEffectsEnabled]);
 
   if (!currentQuestion) return null;
 
@@ -61,9 +71,13 @@ export function QuestionView() {
       <div className="flex-1 relative flex flex-row min-h-0">
         <section className="w-1/2 h-full shrink-0 flex items-center justify-center px-6 md:px-10">
           <div className="question-prompt w-4/5 max-w-full flex flex-col items-center text-center gap-4">
-            <p className="font-tradeWinds text-xl md:text-2xl lg:text-3xl question-numbering">
-              {currentQuestion.category ?? 'Live Market Intelligence'}
-            </p>
+            {(currentQuestion.displaySubtitle || currentQuestion.category) && (
+              <p className={`font-tradeWinds text-xl md:text-2xl lg:text-3xl question-numbering ${
+                currentQuestion.displaySubtitle ? 'text-vault-gold' : ''
+              }`}>
+                {currentQuestion.displaySubtitle ?? currentQuestion.category ?? 'Live Market Intelligence'}
+              </p>
+            )}
             <p className="font-newspaper text-3xl md:text-4xl lg:text-5xl leading-tight question-copy">
               {currentQuestion.question}
             </p>

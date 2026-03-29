@@ -1,7 +1,8 @@
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useGameActions, useGameState } from '@/context/GameContext';
-import { useEffect } from 'react';
+import { useAudioSettings } from '@/shared/context/AudioSettingsContext';
 import introTutorialAudioSrc from '@/assets/audio/intro-tutorial.mp3';
 
 const INTRO_SEQUENCE_DURATION_SECONDS = 25.715;
@@ -21,6 +22,18 @@ const LINES = [
 export function IntroView() {
   const { preparationMessage } = useGameState();
   const { advancePhase } = useGameActions();
+  const { musicEnabled } = useAudioSettings();
+  const introAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [isSkipping, setIsSkipping] = useState(false);
+
+  const handleSkipIntro = () => {
+    if (isSkipping) {
+      return;
+    }
+
+    setIsSkipping(true);
+    advancePhase();
+  };
 
   useEffect(() => {
     const timeout = window.setTimeout(
@@ -32,9 +45,24 @@ export function IntroView() {
   }, [advancePhase]);
 
   useEffect(() => {
-    const introAudio = new Audio(introTutorialAudioSrc);
-    introAudio.preload = 'auto';
-    introAudio.volume = 0.9;
+    if (typeof Audio === 'undefined') {
+      return;
+    }
+
+    if (!introAudioRef.current) {
+      const introAudio = new Audio(introTutorialAudioSrc);
+      introAudio.preload = 'auto';
+      introAudio.volume = 0.9;
+      introAudioRef.current = introAudio;
+    }
+
+    const introAudio = introAudioRef.current;
+
+    if (!musicEnabled) {
+      introAudio.pause();
+      introAudio.currentTime = 0;
+      return;
+    }
 
     void introAudio.play().catch(() => {
       // Browsers can block autoplay until the first interaction.
@@ -44,11 +72,20 @@ export function IntroView() {
       introAudio.pause();
       introAudio.currentTime = 0;
     };
-  }, []);
+  }, [musicEnabled]);
 
   return (
     <HostLayout>
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 px-16">
+      <div className="relative flex-1 flex flex-col items-center justify-center gap-6 px-16">
+        <button
+          type="button"
+          onClick={handleSkipIntro}
+          disabled={isSkipping}
+          className="vault-button-secondary absolute left-6 top-6 px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          {isSkipping ? 'Skipping...' : 'Skip Intro'}
+        </button>
+
         <motion.h1
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}

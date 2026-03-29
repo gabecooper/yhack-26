@@ -1,12 +1,12 @@
 -- Run this in the Supabase SQL Editor.
 -- Creates a reusable custom-pack question bank and seeds:
--- 20 questions per style: kid-friendly, for-friends, for-family, funny.
+-- 20 questions per style: kid-friendly, for-friends, for-family, funny, outta-pocket.
 
 create extension if not exists pgcrypto;
 
 create table if not exists public.custom_pack_questions (
   id uuid primary key default gen_random_uuid(),
-  style text not null check (style in ('kid-friendly', 'for-friends', 'for-family', 'funny')),
+  style text not null check (style in ('kid-friendly', 'for-friends', 'for-family', 'funny', 'outta-pocket')),
   question text not null,
   options jsonb not null,
   correct integer not null check (correct between 0 and 3),
@@ -14,6 +14,45 @@ create table if not exists public.custom_pack_questions (
   created_at timestamptz not null default now(),
   unique (style, question)
 );
+
+alter table public.custom_pack_questions
+  add column if not exists probabilities jsonb not null default '[0.25,0.25,0.25,0.25]'::jsonb;
+
+alter table public.custom_pack_questions
+  add column if not exists created_at timestamptz default now();
+
+alter table public.custom_pack_questions
+  alter column probabilities set default '[0.25,0.25,0.25,0.25]'::jsonb;
+
+update public.custom_pack_questions
+set probabilities = '[0.25,0.25,0.25,0.25]'::jsonb
+where probabilities is null;
+
+update public.custom_pack_questions
+set created_at = now()
+where created_at is null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.custom_pack_questions'::regclass
+      and contype = 'u'
+      and pg_get_constraintdef(oid) = 'UNIQUE (style, question)'
+  ) then
+    alter table public.custom_pack_questions
+      add constraint custom_pack_questions_style_question_key
+      unique (style, question);
+  end if;
+end $$;
+
+alter table public.custom_pack_questions
+  drop constraint if exists custom_pack_questions_style_check;
+
+alter table public.custom_pack_questions
+  add constraint custom_pack_questions_style_check
+  check (style in ('kid-friendly', 'for-friends', 'for-family', 'funny', 'outta-pocket'));
 
 alter table public.custom_pack_questions enable row level security;
 
@@ -34,7 +73,7 @@ begin
 end $$;
 
 delete from public.custom_pack_questions
-where style in ('kid-friendly', 'for-friends', 'for-family', 'funny');
+where style in ('kid-friendly', 'for-friends', 'for-family', 'funny', 'outta-pocket');
 
 insert into public.custom_pack_questions (style, question, options, correct, probabilities) values
 ('kid-friendly','What time do you usually wake up on school days?','["Before 7 AM","7-8 AM","8-9 AM","After 9 AM"]'::jsonb,1,'[0.2,0.5,0.2,0.1]'::jsonb),
@@ -77,8 +116,6 @@ insert into public.custom_pack_questions (style, question, options, correct, pro
 ('for-friends','What kind of friend are you in group projects?','["Organizer","Researcher","Presenter","Polisher"]'::jsonb,0,'[0.36,0.26,0.2,0.18]'::jsonb),
 ('for-friends','When plans change suddenly, you usually...','["Adapt fast","Need a minute","Prefer to cancel","Suggest backup plan"]'::jsonb,3,'[0.28,0.2,0.18,0.34]'::jsonb),
 ('for-friends','Your ideal friend trip has...','["Packed itinerary","A few must-do spots","No plan","Mostly food stops"]'::jsonb,1,'[0.2,0.34,0.24,0.22]'::jsonb),
-('for-friends','What are you most likely to forget at home?','["Wallet","Water bottle","Jacket","Nothing"]'::jsonb,1,'[0.24,0.34,0.26,0.16]'::jsonb),
-
 ('for-family','Who usually sets the schedule at home?','["A parent","A grandparent","Everyone together","No one"]'::jsonb,0,'[0.52,0.14,0.24,0.1]'::jsonb),
 ('for-family','What is your family dinner vibe?','["Everyone together","Eat in shifts","Quick meals","Takeout night"]'::jsonb,0,'[0.44,0.2,0.18,0.18]'::jsonb),
 ('for-family','Who is most likely to remind others about plans?','["{player}","A parent","Sibling","Family group chat"]'::jsonb,1,'[0.24,0.42,0.18,0.16]'::jsonb),
@@ -119,5 +156,26 @@ insert into public.custom_pack_questions (style, question, options, correct, pro
 ('funny','What is your peak "I tried" meal?','["Cereal","Toast","Microwaved leftovers","Delivery"]'::jsonb,2,'[0.2,0.18,0.4,0.22]'::jsonb),
 ('funny','Who is most likely to open 20 tabs and forget why?','["{player}","The multitasker","The researcher","No one"]'::jsonb,1,'[0.24,0.44,0.2,0.12]'::jsonb),
 ('funny','How do you usually end a chaotic day?','["Gym","Long shower","Scroll and sleep","Late snack"]'::jsonb,2,'[0.16,0.24,0.4,0.2]'::jsonb),
-('funny','What is your accidental superpower?','["Finding shortcuts","Overexplaining","Spotting drama","Remembering tiny details"]'::jsonb,3,'[0.22,0.24,0.2,0.34]'::jsonb)
+('funny','What is your accidental superpower?','["Finding shortcuts","Overexplaining","Spotting drama","Remembering tiny details"]'::jsonb,3,'[0.22,0.24,0.2,0.34]'::jsonb),
+
+('outta-pocket','If your group had a reality show, who is getting canceled first?','["The oversharer","The instigator","The fake nice one","The one with old tweets","The one who swears it was satire"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is your biggest red flag?','["I overthink everything","I ghost texts","I love attention too much","I get bored fast","I act fine when I am not"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who would accidentally start a situationship and stay in it for 2 years?','["The flirt","The busiest one","The one who hates labels","The serial texter","The ''we are just vibing'' one"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is your most irrational pet peeve?','["Loud chewing","Slow walkers","Bad grammar","Wet bathroom floors","People who FaceTime in public"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here would you secretly date?','["The funniest one","The quiet one","The one with good style","No comment","The one with a bad attitude"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who is most likely to be fake nice?','["The people pleaser","The smooth talker","The one who says ''love ya'' to everyone","The gossip","The one who smiles through shade"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who gives the worst advice but with confidence?','["The loud one","The delusional one","The relationship expert with no relationships","The motivational speaker","The one who says ''trust me'' first"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is your biggest double standard?','["I hate clingy people but want attention","I judge replies then disappear","I want honesty but get defensive","I preach balance and choose chaos","I say be direct and still hint"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who is most likely to ruin a group plan?','["The late one","The flaky one","The one who changes the plan last minute","The broke one","The one who says ''let us see''"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','If you had to swap lives with someone here, who are you avoiding?','["The overbooked one","The dramatic one","The one with too much family drama","The one always in trouble","The one who never sleeps"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here has definitely had a "bathroom emergency" recently?','["The lactose intolerant one","The one always leaving suddenly","The coffee addict","The chaotic eater","The one who trusted street food"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here gives "I did not shower" energy?','["The hoodie repeater","The bedhead one","The gym-to-class speedrunner","The dry shampoo ambassador","The one in yesterday clothes"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is something weird you do when no one is watching?','["Talk to myself","Practice fake arguments","Check angles in mirrors","Make up fake speeches","Rewatch the same clip ten times"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here checks themselves out in reflections way too often?','["The style icon","The one fixing their hair every minute","The gym one","The main character","The one who loves a mirror selfie"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is something you pretend not to care about?','["Who viewed my story","Getting invited first","Looking cool","Winning every argument","Being everyone favorite"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is something you say way too much?','["It is not that deep","I am dead","Lowkey","Be so serious","That is crazy"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here do you think has the worst taste in people?','["The fixer","The one who loves red flags","The hopeless romantic","The one who says ''I can change them''","The one who ignores every warning"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here has the worst job?','["The customer service survivor","The one with weird hours","The one underpaid for everything","The one with the nightmare boss","The one living on tips and vibes"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','What is the dumbest reason you have been mad at someone?','["They texted ''k''","They liked a story and said nothing","They walked too slow","They copied my joke","They did not share fries"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb),
+('outta-pocket','Who here would get caught lying the fastest?','["The nervous laugher","The oversharer","The one who forgets details","The bad actor","The one who talks too much"]'::jsonb,0,'[0.25,0.25,0.25,0.25]'::jsonb)
 on conflict (style, question) do nothing;

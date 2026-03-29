@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useAuth } from '../AuthContext';
 
 type AuthMode = 'sign-in' | 'sign-up';
+const LIVE_CATEGORY_PILLS = ['Polymarket', 'Friend Group', 'Coursework', 'Misc Scraps'];
 
 function getFriendlyErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -89,9 +90,16 @@ export function AuthView() {
                 <p className="font-ui text-xs uppercase tracking-[0.28em] text-white/45">
                   Live Categories
                 </p>
-                <p className="mt-3 font-ui text-base text-white/72">
-                  Pull active Polymarket prompts into the host experience with the same room flow you already built.
-                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {LIVE_CATEGORY_PILLS.map(pill => (
+                    <span
+                      key={pill}
+                      className="inline-flex items-center justify-center rounded-full border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-3 py-1 text-center font-ui text-[11px] font-semibold uppercase tracking-[0.16em] text-[#f3c77a]"
+                    >
+                      {pill}
+                    </span>
+                  ))}
+                </div>
               </div>
               <div className="rounded-[1.6rem] border border-white/10 bg-black/20 p-5">
                 <p className="font-ui text-xs uppercase tracking-[0.28em] text-white/45">
@@ -104,7 +112,11 @@ export function AuthView() {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+          <motion.div
+            layout
+            transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+            className="rounded-[2rem] border border-white/10 bg-black/30 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.22)]"
+          >
             <div className="mb-6 flex rounded-full border border-white/10 bg-black/20 p-1">
               {([
                 ['sign-in', 'Sign In'],
@@ -137,24 +149,35 @@ export function AuthView() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              {mode === 'sign-up' && (
-                <div className="space-y-2">
-                  <label className="block font-ui text-xs uppercase tracking-[0.24em] text-white/55">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={event => setDisplayName(event.target.value.slice(0, 32))}
-                    className="minimal-input font-ui text-lg"
-                    placeholder="How the crew should know you"
-                    autoComplete="name"
-                  />
-                </div>
-              )}
+            <motion.form layout onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <AnimatePresence initial={false}>
+                {mode === 'sign-up' && (
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, height: 0, y: -8 }}
+                    animate={{ opacity: 1, height: 'auto', y: 0 }}
+                    exit={{ opacity: 0, height: 0, y: -8 }}
+                    transition={{ duration: 0.22, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-2">
+                      <label className="block font-ui text-xs uppercase tracking-[0.24em] text-white/55">
+                        Display Name
+                      </label>
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={event => setDisplayName(event.target.value.slice(0, 32))}
+                        className="minimal-input font-ui text-lg"
+                        placeholder="How the crew should know you"
+                        autoComplete="name"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              <div className="space-y-2">
+              <motion.div layout className="space-y-2">
                 <label className="block font-ui text-xs uppercase tracking-[0.24em] text-white/55">
                   Email
                 </label>
@@ -166,9 +189,9 @@ export function AuthView() {
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
-              </div>
+              </motion.div>
 
-              <div className="space-y-2">
+              <motion.div layout className="space-y-2">
                 <label className="block font-ui text-xs uppercase tracking-[0.24em] text-white/55">
                   Password
                 </label>
@@ -180,29 +203,42 @@ export function AuthView() {
                   placeholder="Enter password"
                   autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
                 />
-              </div>
+              </motion.div>
 
               {errorMessage && (
-                <p className="rounded-[1.2rem] border border-vault-red/35 bg-vault-red/10 px-4 py-3 font-ui text-sm text-white/85">
+                <motion.p
+                  layout
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="rounded-[1.2rem] border border-vault-red/35 bg-vault-red/10 px-4 py-3 font-ui text-sm text-white/85"
+                >
                   {errorMessage}
-                </p>
+                </motion.p>
               )}
 
               {successMessage && (
-                <p className="rounded-[1.2rem] border border-vault-green/35 bg-vault-green/10 px-4 py-3 font-ui text-sm text-white/85">
+                <motion.p
+                  layout
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="rounded-[1.2rem] border border-vault-green/35 bg-vault-green/10 px-4 py-3 font-ui text-sm text-white/85"
+                >
                   {successMessage}
-                </p>
+                </motion.p>
               )}
 
-              <button
+              <motion.button
+                layout
                 type="submit"
                 disabled={!isConfigured || isSubmitting || !email.trim() || !password.trim() || (mode === 'sign-up' && !displayName.trim())}
                 className="minimal-button-primary mt-2 w-full py-4 text-lg"
               >
                 {isSubmitting ? 'Working...' : mode === 'sign-in' ? 'Enter Vault' : 'Create Account'}
-              </button>
-            </form>
-          </div>
+              </motion.button>
+            </motion.form>
+          </motion.div>
         </motion.div>
       </div>
     </HostLayout>

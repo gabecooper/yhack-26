@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { GameState, GamePhase, GameStartOptions, CustomQuestionPack } from '@/types/game';
+import type { GameState, GamePhase, GameStartOptions, CustomQuestionPack, ProfileResponseValue } from '@/types/game';
 
 export interface GameActions {
   createRoom: () => Promise<void>;
@@ -7,7 +7,7 @@ export interface GameActions {
   leaveRoom: () => Promise<void>;
   startGame: (options?: GameStartOptions) => Promise<void>;
   simulateDevPlayerJoin: (characterIndex: number) => void;
-  submitAnswer: (playerId: string, answerIndex: number) => void;
+  submitAnswer: (playerId: string, answer: ProfileResponseValue) => void;
   submitMinigameAnswer: (playerId: string, answer: number) => void;
   submitWager: (playerId: string, percentage: number) => void;
   uploadPdf: (filename: string, uploadedBy: string | null) => void;
@@ -18,7 +18,9 @@ export interface GameActions {
   upsertCustomPack: (pack: CustomQuestionPack) => void;
   toggleCustomPack: (packId: string, enabled: boolean) => void;
   removeCustomPack: (packId: string) => void;
+  clearPendingFriendGroupPackDraft: () => void;
   playAgain: () => void;
+  returnToLobby: () => void;
   setPhase: (phase: GamePhase) => void;
   advancePhase: () => void;
 }
