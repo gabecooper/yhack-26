@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { PhoneLayout } from '@/shared/components/PhoneLayout';
 import { useGameState } from '@/context/GameContext';
-import { ANSWER_COLORS } from '@/constants/gameConfig';
+import { getAnswerMeta } from '@/constants/gameConfig';
 
 interface ResultsPhoneViewProps {
   playerId: string;
@@ -16,20 +16,21 @@ export function ResultsPhoneView({ playerId }: ResultsPhoneViewProps) {
   const playerAnswer = results.playerAnswers[playerId];
   const isCorrect = playerAnswer === results.correctIndex;
   const correctChoice = currentQuestion.choices[results.correctIndex];
+  const correctAnswerMeta = getAnswerMeta(results.correctIndex);
 
   return (
-    <PhoneLayout>
-      <div className="flex-1 flex flex-col items-center justify-center gap-6">
+    <PhoneLayout contentClassName="justify-center">
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5 text-center">
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300 }}
-          className="text-center"
+          className="soft-glass-panel w-full rounded-[2rem] px-6 py-8"
         >
           <motion.div
             animate={isCorrect ? { rotate: [0, -10, 10, 0] } : { x: [0, -8, 8, -8, 0] }}
             transition={{ delay: 0.3 }}
-            className={`text-7xl mb-4 ${isCorrect ? '' : ''}`}
+            className="mb-4 text-6xl"
           >
             {isCorrect ? (
               <span className="font-title text-vault-green">CORRECT!</span>
@@ -37,35 +38,25 @@ export function ResultsPhoneView({ playerId }: ResultsPhoneViewProps) {
               <span className="font-title text-vault-red">WRONG!</span>
             )}
           </motion.div>
-        </motion.div>
 
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="vault-panel p-6 rounded-xl w-full max-w-xs text-center"
-        >
-          <p className="font-ui text-sm text-gray-400 mb-2">The answer was</p>
+          <p className="font-ui text-xs uppercase tracking-[0.28em] text-white/50">
+            Correct Answer
+          </p>
           <div
-            className="inline-block rounded-lg px-5 py-2 font-ui font-bold text-lg text-white"
-            style={{ backgroundColor: ANSWER_COLORS[results.correctIndex].bg }}
+            className="mt-4 inline-block rounded-full px-5 py-2 font-ui text-lg font-bold text-white"
+            style={{ backgroundColor: correctAnswerMeta.bg }}
           >
-            {ANSWER_COLORS[results.correctIndex].label}: {correctChoice}
+            {correctAnswerMeta.label}: {correctChoice}
           </div>
-        </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="text-center"
-        >
-          {isCorrect ? (
-            <p className="font-title text-2xl text-vault-gold">+$100</p>
-          ) : (
-            <p className="font-ui text-lg text-vault-red">No payout this round.</p>
-          )}
-          <p className="font-ui text-sm text-gray-500 mt-2">
+          <div className="mt-6">
+            {isCorrect ? (
+              <p className="font-title text-3xl text-vault-gold">+$100</p>
+            ) : (
+              <p className="font-ui text-lg text-vault-red">No payout this round.</p>
+            )}
+          </div>
+          <p className="mt-2 font-ui text-sm text-white/55">
             Score: <span className="text-vault-gold">${player?.score ?? 0}</span>
           </p>
         </motion.div>

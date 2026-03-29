@@ -18,13 +18,23 @@ export function QuestionView() {
     <HostLayout backgroundImage={v4RoofBg} minimalSettingsGear>
       <div className="flex-1 relative flex flex-row min-h-0">
         <section className="w-1/2 h-full shrink-0 flex items-center justify-center px-6 md:px-10">
-          <div className="w-4/5 max-w-full flex flex-col items-center text-center gap-4">
-            <p className="font-tradeWinds text-xl md:text-2xl lg:text-3xl question-numbering question-prompt">
-              CS51: Abstraction
+          <div className="question-prompt w-4/5 max-w-full flex flex-col items-center text-center gap-4">
+            <p className="font-tradeWinds text-xl md:text-2xl lg:text-3xl question-numbering">
+              {currentQuestion.category ?? 'Live Market Intelligence'}
             </p>
-            <p className="font-newspaper text-3xl md:text-4xl lg:text-5xl leading-tight question-copy question-prompt">
+            <p className="font-newspaper text-3xl md:text-4xl lg:text-5xl leading-tight question-copy">
               {currentQuestion.question}
             </p>
+            {currentQuestion.source && (
+              <a
+                href={currentQuestion.source}
+                target="_blank"
+                rel="noreferrer"
+                className="font-ui text-xs uppercase tracking-[0.24em] text-white/60 transition-opacity hover:opacity-80"
+              >
+                View source market
+              </a>
+            )}
           </div>
         </section>
 

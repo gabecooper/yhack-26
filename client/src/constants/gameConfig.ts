@@ -20,3 +20,12 @@ export const ANSWER_COLORS = [
   { bg: '#38a169', hover: '#2f855a', label: 'C' },
   { bg: '#d69e2e', hover: '#b7791f', label: 'D' },
 ] as const;
+
+export function getAnswerMeta(index: number) {
+  const color = ANSWER_COLORS[index % ANSWER_COLORS.length];
+
+  return {
+    ...color,
+    label: String.fromCharCode(65 + index),
+  };
+}

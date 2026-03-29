@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
-import { useGameActions } from '@/context/GameContext';
+import { useGameActions, useGameState } from '@/context/GameContext';
 import { useEffect } from 'react';
 
 const LINES = [
@@ -13,6 +13,7 @@ const LINES = [
 ];
 
 export function IntroView() {
+  const { preparationMessage } = useGameState();
   const { setPhase } = useGameActions();
 
   useEffect(() => {
@@ -48,11 +49,16 @@ export function IntroView() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 10 }}
-          className="mt-8"
+          className="mt-8 flex flex-col items-center gap-4"
         >
           <p className="font-handwritten text-xl text-vault-gold animate-pulse">
             Starting in a moment...
           </p>
+          {preparationMessage && (
+            <p className="max-w-2xl rounded-[1.4rem] border border-white/10 bg-black/20 px-5 py-3 text-center font-ui text-sm text-white/72">
+              {preparationMessage}
+            </p>
+          )}
         </motion.div>
       </div>
     </HostLayout>

@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/auth/AuthContext';
+import { useAppFlow } from '@/app/AppFlowContext';
 
 interface SettingsGearProps {
   minimal?: boolean;
@@ -8,17 +11,50 @@ interface SettingsGearProps {
 
 export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const positionClass = side === 'left' ? 'left-4' : 'right-4';
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+  const { flow, clearFlow } = useAppFlow();
+  const gearPositionStyle =
+    side === 'left'
+      ? {
+          top: 'max(1rem, calc(env(safe-area-inset-top) + 0.75rem))',
+          left: '1rem',
+        }
+      : {
+          top: 'max(1rem, calc(env(safe-area-inset-top) + 0.75rem))',
+          right: '1rem',
+        };
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+
+    try {
+      await signOut();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Unable to sign out cleanly', error);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleSwitchFlow = () => {
+    clearFlow();
+    setIsOpen(false);
+    navigate('/start');
+  };
 
   return (
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed top-4 ${positionClass} z-50 w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
+        className={`fixed z-50 flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
           minimal
-            ? 'bg-transparent border-transparent hover:bg-black/15'
-            : 'bg-vault-dark/80 border border-vault-steel hover:bg-vault-steel/50'
+            ? 'border border-white/10 bg-black/10 backdrop-blur-sm hover:bg-black/20'
+            : 'border border-white/10 bg-black/30 backdrop-blur-md hover:bg-black/40'
         }`}
+        style={gearPositionStyle}
         aria-label="Settings"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -53,6 +89,35 @@ export function SettingsGear({ minimal = false, side = 'right' }: SettingsGearPr
                   <input type="checkbox" defaultChecked className="h-5 w-5 accent-vault-gold" />
                 </label>
               </div>
+              <div className="mt-6 rounded-2xl bg-black/5 px-4 py-3 font-ui">
+                <p className="text-xs uppercase tracking-[0.24em] text-[#4a5568]">Startup Flow</p>
+                <p className="mt-2 text-base font-semibold capitalize">
+                  {flow ?? 'Not selected'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSwitchFlow}
+                  className="mt-4 w-full rounded-xl border border-[#1a202c]/10 bg-white px-4 py-3 text-base font-semibold text-[#1a202c] transition-colors hover:bg-[#f7fafc]"
+                >
+                  Switch Flow
+                </button>
+              </div>
+              {user && (
+                <div className="mt-6 rounded-2xl bg-black/5 px-4 py-3 font-ui">
+                  <p className="text-xs uppercase tracking-[0.24em] text-[#4a5568]">Signed In</p>
+                  <p className="mt-2 text-base font-semibold break-all">{user.email}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSignOut();
+                    }}
+                    disabled={isSigningOut}
+                    className="mt-4 w-full rounded-xl border border-[#1a202c]/10 bg-[#1a202c] px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => setIsOpen(false)}
                 className="mt-6 w-full rounded-xl bg-vault-gold px-6 py-3 font-ui text-lg font-bold text-[#1a202c] transition-colors hover:bg-[#ecc94b]"

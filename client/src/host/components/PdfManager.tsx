@@ -39,10 +39,10 @@ export function PdfManager({ pdfs }: PdfManagerProps) {
           >
             <button
               onClick={() => removePdf(pdf.id)}
-              className="absolute right-2 top-2 font-ui text-sm leading-none text-white/50 opacity-0 transition-opacity hover:text-vault-red group-hover:opacity-100"
+              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-[#975a16]/80 bg-[#1a202c]/85 font-ui text-sm font-bold leading-none text-[#f3c77a] opacity-0 transition-all hover:border-[#ecc94b] hover:bg-[#2d3748] hover:text-[#fde68a] group-hover:opacity-100"
               aria-label={`Remove ${pdf.filename}`}
             >
-              x
+              ×
             </button>
 
             <div className="flex items-center gap-2 mb-2">

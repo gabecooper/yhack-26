@@ -11,10 +11,18 @@ export type GamePhase =
   | 'gameover';
 
 export interface Question {
+  id: string;
   question: string;
-  choices: [string, string, string, string];
+  choices: string[];
   correct: number;
   keywords: string[];
+  category?: string;
+  source?: string | null;
+  probabilities?: number[];
+}
+
+export interface GameStartOptions {
+  polymarketCategories?: string[];
 }
 
 export interface QuestionResult {
@@ -51,14 +59,18 @@ export interface GameState {
   roomCode: string;
   phase: GamePhase;
   players: PlayerState[];
+  questionDeck: Question[];
   currentQuestion: Question | null;
   questionIndex: number;
   totalQuestions: number;
   timeRemaining: number;
   timerDuration: number;
+  roundDeadlineAt: string | null;
   results: QuestionResult | null;
   minigame: MinigameState | null;
   vaultRun: VaultRunState | null;
   winnerId: string | null;
   pdfs: PdfEntry[];
+  isPreparingGame: boolean;
+  preparationMessage: string | null;
 }

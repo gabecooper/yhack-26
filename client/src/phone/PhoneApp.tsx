@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useGameState } from '@/context/GameContext';
+import { useGameActions, useGameState } from '@/context/GameContext';
 import { DevToolbar } from '@/shared/components/DevToolbar';
+import { useAppFlow } from '@/app/AppFlowContext';
 import { JoinView } from './views/JoinView';
 import { WaitingView } from './views/WaitingView';
 import { QuestionPhoneView } from './views/QuestionPhoneView';
@@ -17,6 +18,8 @@ const PAGE_TRANSITION = {
 
 export function PhoneApp() {
   const { phase, players } = useGameState();
+  const { leaveRoom } = useGameActions();
+  const { flow } = useAppFlow();
   const [playerId, setPlayerId] = useState<string | null>(() =>
     localStorage.getItem('heist_player_id')
   );
@@ -30,6 +33,7 @@ export function PhoneApp() {
 
   const handleJoin = (id: string) => setPlayerId(id);
   const handleLeave = () => {
+    void leaveRoom();
     localStorage.removeItem('heist_player_id');
     setPlayerId(null);
   };
@@ -38,7 +42,7 @@ export function PhoneApp() {
     return (
       <>
         <JoinView onJoin={handleJoin} />
-        <DevToolbar />
+        {flow === 'dev' && <DevToolbar />}
       </>
     );
   }
@@ -62,7 +66,7 @@ export function PhoneApp() {
           )}
         </motion.div>
       </AnimatePresence>
-      <DevToolbar />
+      {flow === 'dev' && <DevToolbar />}
     </>
   );
 }

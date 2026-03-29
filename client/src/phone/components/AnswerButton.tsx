@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ANSWER_COLORS } from '@/constants/gameConfig';
+import { getAnswerMeta } from '@/constants/gameConfig';
 
 interface AnswerButtonProps {
   index: number;
@@ -10,24 +10,28 @@ interface AnswerButtonProps {
 }
 
 export function AnswerButton({ index, label, onSelect, disabled = false, selected = false }: AnswerButtonProps) {
-  const color = ANSWER_COLORS[index];
+  const color = getAnswerMeta(index);
 
   return (
     <motion.button
       whileTap={disabled ? {} : { scale: 0.95 }}
       onClick={onSelect}
       disabled={disabled}
-      className="w-full rounded-2xl px-5 py-5 flex items-center gap-4 text-left transition-opacity active:opacity-90 disabled:opacity-50"
+      className="flex w-full items-center gap-4 rounded-[1.6rem] border border-white/12 bg-black/20 px-5 py-4 text-left transition-all active:opacity-90 disabled:opacity-50"
       style={{
-        backgroundColor: color.bg,
-        border: selected ? '3px solid white' : '3px solid transparent',
+        borderColor: selected ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.12)',
         opacity: disabled && !selected ? 0.5 : 1,
+        boxShadow: '0 16px 34px rgba(0, 0, 0, 0.18)',
+        backdropFilter: 'blur(16px)',
       }}
     >
-      <span className="font-title text-3xl text-white/70 shrink-0 w-10 text-center">
+      <span
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-title text-2xl text-white"
+        style={{ backgroundColor: color.bg }}
+      >
         {color.label}
       </span>
-      <span className="font-ui font-bold text-lg text-white leading-tight">
+      <span className="font-ui text-lg font-semibold leading-tight text-white">
         {label}
       </span>
     </motion.button>

@@ -2,11 +2,12 @@ import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { CharacterAvatar } from '@/shared/components/CharacterAvatar';
 import { ScoreBoard } from '../components/ScoreBoard';
-import { useGameState } from '@/context/GameContext';
+import { useGameActions, useGameState } from '@/context/GameContext';
 import v4RoofBg from '@/assets/backgrounds/v4roof.png';
 
 export function LeaderboardView() {
   const { players, questionIndex } = useGameState();
+  const { advancePhase } = useGameActions();
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
   const leader = sortedPlayers[0] ?? null;
 
@@ -121,6 +122,13 @@ export function LeaderboardView() {
                 <p>Big jumps here usually decide the endgame later.</p>
                 <p>One good question can still flip the whole board.</p>
               </div>
+
+              <button
+                onClick={advancePhase}
+                className="vault-button mt-8 w-full px-6 py-4 text-xl"
+              >
+                Next Round
+              </button>
             </motion.div>
           </div>
         </section>

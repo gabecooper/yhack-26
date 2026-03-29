@@ -13,17 +13,23 @@ export function WaitingView({ player, onLeave }: WaitingViewProps) {
   const character = HEIST_CHARACTERS[player.characterIndex];
 
   return (
-    <PhoneLayout>
-      <div className="flex-1 flex flex-col items-center justify-center gap-6">
+    <PhoneLayout contentClassName="justify-center">
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="flex flex-col items-center gap-3"
+          className="soft-glass-panel flex flex-col items-center gap-4 rounded-[2rem] px-6 py-7 text-center"
         >
-          <CharacterAvatar characterIndex={player.characterIndex} size={80} showRole />
-          <h2 className="font-title text-3xl text-white">{player.name}</h2>
-          <p className="font-ui text-gray-400">
+          <p className="font-ui text-xs uppercase tracking-[0.32em] text-white/55">
+            Ready
+          </p>
+          <CharacterAvatar characterIndex={player.characterIndex} size={88} showRole />
+          <h2 className="font-title text-4xl text-white">{player.name}</h2>
+          <p className="font-ui text-base text-white/70">
             You are the <span className="text-vault-gold">{character?.role}</span>
+          </p>
+          <p className="max-w-[16rem] font-ui text-sm text-white/55">
+            Sit tight while the host finishes setting up the next round.
           </p>
         </motion.div>
 
@@ -31,16 +37,16 @@ export function WaitingView({ player, onLeave }: WaitingViewProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="vault-panel p-6 rounded-xl w-full max-w-xs text-center"
+          className="rounded-[1.75rem] border border-white/10 bg-black/15 px-6 py-6 text-center shadow-[0_16px_40px_rgba(0,0,0,0.18)] backdrop-blur-sm"
         >
-          <p className="font-handwritten text-xl text-gray-300">
+          <p className="font-ui text-lg uppercase tracking-[0.18em] text-white/80">
             Waiting for the host to start the heist...
           </p>
-          <div className="mt-4 flex justify-center gap-1">
+          <div className="mt-5 flex justify-center gap-2">
             {[0, 1, 2].map(i => (
               <motion.div
                 key={i}
-                className="w-2 h-2 rounded-full bg-vault-gold"
+                className="h-2 w-2 rounded-full bg-vault-gold"
                 animate={{ opacity: [0.3, 1, 0.3] }}
                 transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.3 }}
               />
@@ -52,14 +58,11 @@ export function WaitingView({ player, onLeave }: WaitingViewProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="w-full max-w-xs"
+          className="w-full"
         >
-          <button className="vault-button-secondary w-full text-sm py-3 mb-3">
-            Upload PDF
-          </button>
           <button
             onClick={onLeave}
-            className="w-full text-center font-ui text-sm text-gray-500 hover:text-vault-red transition-colors"
+            className="minimal-button-secondary w-full py-3 text-sm tracking-[0.24em] text-white/80"
           >
             Leave Room
           </button>

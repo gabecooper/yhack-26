@@ -1,34 +1,22 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
+import { POLYMARKET_CATEGORIES, getPolymarketCategoryName } from '@/services/polymarket/categories';
 import { PdfManager } from '../components/PdfManager';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
 import brownStudent from '../../../../brown student .png';
 import harvardInfluencer from '../../../../harvard influencer-Picsart-BackgroundRemover.png';
 import mitFounder from '../../../../mit stinky founder-Picsart-BackgroundRemover.png';
+import whartonRaccoon from '../../../../wharton.png';
 import yalePortrait from '../../../../yale.png';
 
 const SCHOOL_CREW = [
   { label: 'Brown', image: brownStudent, scale: 1 },
   { label: 'Harvard', image: harvardInfluencer, scale: 2 },
   { label: 'MIT', image: mitFounder, scale: 2 },
+  { label: 'Wharton', image: whartonRaccoon, scale: 2 },
   { label: 'Yale', image: yalePortrait, scale: 2 },
-];
-
-const CREW_DISPLAY = Array.from({ length: 8 }, (_, index) => {
-  const crewMember = SCHOOL_CREW[index % SCHOOL_CREW.length];
-  return {
-    ...crewMember,
-    key: `${crewMember.label}-${index}`,
-  };
-});
-
-const POLYMARKET_CATEGORIES = [
-  'Politics',
-  'Economy',
-  'Tech',
-  'Sports',
 ];
 
 const FRIEND_GROUP_PACKS = [
@@ -40,7 +28,7 @@ const FRIEND_GROUP_PACKS = [
 type ScrapSectionId = 'polymarket' | 'coursework' | 'friends';
 
 export function RoomView() {
-  const { roomCode, players, pdfs } = useGameState();
+  const { roomCode, players, pdfs, isPreparingGame } = useGameState();
   const { startGame } = useGameActions();
   const [openScrapId, setOpenScrapId] = useState<ScrapSectionId | null>('coursework');
   const [selectedPolymarket, setSelectedPolymarket] = useState<string[]>([]);
@@ -48,15 +36,26 @@ export function RoomView() {
 
   const hasPlayers = players.length >= GAME_CONFIG.minPlayers;
   const hasReadyPdfs = pdfs.some(p => p.status === 'ready' && p.enabled);
-  const canStart = hasPlayers && hasReadyPdfs;
+  const hasLivePolymarketSelections = selectedPolymarket.length > 0;
+  const canStart = hasPlayers && (hasReadyPdfs || hasLivePolymarketSelections) && !isPreparingGame;
   const selectedCoursework = pdfs
     .filter(pdf => pdf.enabled)
     .map(pdf => pdf.filename);
   const selectedMaterials = [
-    ...selectedPolymarket,
+    ...selectedPolymarket.map(getPolymarketCategoryName),
     ...selectedCoursework,
     ...selectedFriendPacks,
   ];
+  const playerSlots = Array.from({ length: GAME_CONFIG.maxPlayers }, (_unused, slotIndex) => {
+    const player = players.find(candidate => candidate.characterIndex === slotIndex) ?? null;
+    const crewMember = SCHOOL_CREW[slotIndex % SCHOOL_CREW.length];
+
+    return {
+      player,
+      crewMember,
+      key: player?.id ?? `open-slot-${slotIndex}`,
+    };
+  });
 
   const toggleSelection = (
     value: string,
@@ -71,7 +70,7 @@ export function RoomView() {
 
   return (
     <HostLayout settingsGearSide="right">
-      <div className="flex-1 flex flex-col gap-6 overflow-hidden p-8">
+      <div className="relative flex flex-1 flex-col gap-6 overflow-hidden p-8">
         <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
           {roomCode.split('').map((char, index) => (
             <div
@@ -94,12 +93,12 @@ export function RoomView() {
           </div>
         </motion.div>
 
-        <div className="flex min-h-0 flex-1 items-start gap-6">
+        <div className="flex min-h-0 flex-1 gap-6">
           <motion.div
             initial={{ x: -20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="flex h-full min-h-0 w-[24rem] flex-col px-2 py-4"
+            className="flex h-full min-h-0 w-[24rem] flex-col px-2 pt-4"
           >
             <div className="mb-5">
               <div className="flex flex-col items-center">
@@ -151,16 +150,17 @@ export function RoomView() {
                     <div className="grid grid-cols-2 gap-2">
                       {POLYMARKET_CATEGORIES.map(category => (
                         <button
-                          key={category}
+                          key={category.tag}
                           type="button"
-                          onClick={() => toggleSelection(category, setSelectedPolymarket)}
+                          onClick={() => toggleSelection(category.tag, setSelectedPolymarket)}
                           className={`rounded-full border px-3 py-2 text-left font-ui text-sm transition-colors ${
-                            selectedPolymarket.includes(category)
+                            selectedPolymarket.includes(category.tag)
                               ? 'border-[#f59e0b]/45 bg-[#f59e0b]/18 text-[#f7c87b]'
                               : 'border-white/15 text-white hover:border-white/35 hover:bg-white/5'
                           }`}
                         >
-                          {category}
+                          <span className="mr-2">{category.emoji}</span>
+                          {category.name}
                         </button>
                       ))}
                     </div>
@@ -233,9 +233,10 @@ export function RoomView() {
                     </div>
                     <button
                       type="button"
+                      disabled
                       className="rounded-full border border-dashed border-white/25 px-4 py-2 font-ui text-sm text-gray-300 transition-colors hover:border-white/45 hover:text-white"
                     >
-                      + Create custom pack
+                      Custom packs soon
                     </button>
                   </div>
                 )}
@@ -250,13 +251,19 @@ export function RoomView() {
             transition={{ delay: 0.1 }}
             className="grid flex-1 grid-cols-4 grid-rows-2 gap-x-3 gap-y-2 overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
           >
-            {CREW_DISPLAY.map(({ key, label, image, scale }) => (
+            {playerSlots.map(({ key, player, crewMember }) => (
               <div key={key} className="flex h-36 items-end justify-center">
                 <img
-                  src={image}
-                  alt={`${label} crew portrait`}
-                  className="h-32 w-24 object-contain object-bottom opacity-60 grayscale"
-                  style={{ transform: `scale(${scale})`, transformOrigin: 'bottom center' }}
+                  src={crewMember.image}
+                  alt={`${crewMember.label} raccoon`}
+                  className={`h-32 w-24 object-contain object-bottom transition-opacity ${
+                    player ? 'opacity-100' : 'opacity-30'
+                  }`}
+                  style={{
+                    transform: `scale(${crewMember.scale})`,
+                    transformOrigin: 'bottom center',
+                    filter: player ? 'none' : 'saturate(0.35)',
+                  }}
                 />
               </div>
             ))}
@@ -267,15 +274,18 @@ export function RoomView() {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="flex min-h-[4.5rem] items-center justify-center"
+          className="pointer-events-none absolute bottom-8 left-1/2 z-20 -translate-x-1/2"
         >
           <button
-            onClick={startGame}
+            onClick={() => {
+              void startGame({ polymarketCategories: selectedPolymarket });
+            }}
+            disabled={!canStart}
             className={`vault-button px-16 py-4 text-2xl transition-opacity ${
               canStart ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
             }`}
           >
-            Start
+            {isPreparingGame ? 'Loading...' : 'Start'}
           </button>
         </motion.div>
       </div>

@@ -24,7 +24,7 @@ export function HomeView() {
         />
         <div className="absolute inset-0 bg-black/50" />
 
-        <div className="relative z-10 flex h-full flex-col items-center justify-center gap-8 px-6 text-center">
+        <div className="relative z-10 flex h-full flex-col items-center justify-center gap-10 px-6 text-center">
           <motion.div
             initial={{ y: -30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -45,7 +45,7 @@ export function HomeView() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="flex flex-col items-center gap-4"
           >
-            <button onClick={createRoom} className="vault-button w-72 text-xl py-4">
+            <button onClick={() => { void createRoom(); }} className="vault-button w-72 text-xl py-4">
               Create Room
             </button>
             <button

@@ -12,18 +12,21 @@ export const MOCK_PLAYERS: PlayerState[] = [
 
 export const MOCK_QUESTIONS: Question[] = [
   {
+    id: 'mock-oreo',
     question: 'What design is on each Oreo?',
     choices: ['A flower', 'The word "Oreo"', 'A spiral maze', 'Nothing — they are plain'],
     correct: 1,
     keywords: ['food', 'trivia'],
   },
   {
+    id: 'mock-gold',
     question: 'Which element has the chemical symbol "Au"?',
     choices: ['Silver', 'Aluminum', 'Gold', 'Argon'],
     correct: 2,
     keywords: ['chemistry', 'elements'],
   },
   {
+    id: 'mock-berlin-wall',
     question: 'In what year did the Berlin Wall fall?',
     choices: ['1987', '1989', '1991', '1993'],
     correct: 1,
@@ -42,16 +45,20 @@ export function createInitialState(): GameState {
     roomCode: '',
     phase: 'home',
     players: [],
+    questionDeck: [],
     currentQuestion: null,
     questionIndex: 0,
     totalQuestions: GAME_CONFIG.defaultQuestionCount,
     timeRemaining: GAME_CONFIG.questionTimerSeconds,
     timerDuration: GAME_CONFIG.questionTimerSeconds,
+    roundDeadlineAt: null,
     results: null,
     minigame: null,
     vaultRun: null,
     winnerId: null,
     pdfs: [],
+    isPreparingGame: false,
+    preparationMessage: null,
   };
 }
 
@@ -72,10 +79,11 @@ export function createMockRoomState(): Partial<GameState> {
 }
 
 export function createMockQuestionState(questionIndex: number): Partial<GameState> {
-  const q = MOCK_QUESTIONS[questionIndex % MOCK_QUESTIONS.length];
+  const q = getMockQuestion(questionIndex);
   return {
     phase: 'question',
     currentQuestion: q,
+    questionDeck: MOCK_QUESTIONS,
     questionIndex,
     timeRemaining: GAME_CONFIG.questionTimerSeconds,
     timerDuration: GAME_CONFIG.questionTimerSeconds,
@@ -83,7 +91,7 @@ export function createMockQuestionState(questionIndex: number): Partial<GameStat
 }
 
 export function createMockResultsState(questionIndex: number): Partial<GameState> {
-  const q = MOCK_QUESTIONS[questionIndex % MOCK_QUESTIONS.length];
+  const q = getMockQuestion(questionIndex);
   return {
     phase: 'results',
     currentQuestion: q,
@@ -106,6 +114,10 @@ export function createMockGameOverState(): Partial<GameState> {
     phase: 'gameover',
     winnerId: null,
   };
+}
+
+export function getMockQuestion(questionIndex: number): Question {
+  return MOCK_QUESTIONS[questionIndex % MOCK_QUESTIONS.length];
 }
 
 export { generateRoomCode };

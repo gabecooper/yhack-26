@@ -1,12 +1,13 @@
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { PlayerReaction } from '../components/PlayerReaction';
-import { useGameState } from '@/context/GameContext';
-import { ANSWER_COLORS, GAME_CONFIG } from '@/constants/gameConfig';
+import { useGameActions, useGameState } from '@/context/GameContext';
+import { GAME_CONFIG, getAnswerMeta } from '@/constants/gameConfig';
 import v4RoofBg from '@/assets/backgrounds/v4roof.png';
 
 export function ResultsView() {
   const { currentQuestion, results, players } = useGameState();
+  const { advancePhase } = useGameActions();
 
   if (!currentQuestion || !results) return null;
 
@@ -19,7 +20,7 @@ export function ResultsView() {
   );
 
   const correctAnswer = currentQuestion.choices[results.correctIndex];
-  const answerMeta = ANSWER_COLORS[results.correctIndex];
+  const answerMeta = getAnswerMeta(results.correctIndex);
 
   return (
     <HostLayout backgroundImage={v4RoofBg} minimalSettingsGear>
@@ -123,6 +124,12 @@ export function ResultsView() {
                   </p>
                 )}
               </div>
+              <button
+                onClick={advancePhase}
+                className="vault-button mt-8 w-full px-6 py-4 text-xl"
+              >
+                Continue
+              </button>
             </motion.div>
           </div>
         </section>

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameState } from '@/context/GameContext';
 import { DevToolbar } from '@/shared/components/DevToolbar';
+import { useAppFlow } from '@/app/AppFlowContext';
 import { HomeView } from './views/HomeView';
 import { RoomView } from './views/RoomView';
 import { IntroView } from './views/IntroView';
@@ -32,6 +33,7 @@ function PhaseRenderer({ phase }: { phase: string }) {
 
 export function HostApp() {
   const { phase } = useGameState();
+  const { flow } = useAppFlow();
 
   return (
     <>
@@ -40,7 +42,7 @@ export function HostApp() {
           <PhaseRenderer phase={phase} />
         </motion.div>
       </AnimatePresence>
-      <DevToolbar />
+      {flow === 'dev' && <DevToolbar />}
     </>
   );
 }

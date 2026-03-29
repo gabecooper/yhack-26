@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react';
-import type { GameState, GamePhase, PdfEntry } from '@/types/game';
+import type { GameState, GamePhase, GameStartOptions } from '@/types/game';
 
 export interface GameActions {
-  createRoom: () => void;
-  joinRoom: (roomCode: string, playerName: string) => string;
-  startGame: () => void;
+  createRoom: () => Promise<void>;
+  joinRoom: (roomCode: string, playerName: string) => Promise<string | null>;
+  leaveRoom: () => Promise<void>;
+  startGame: (options?: GameStartOptions) => Promise<void>;
   submitAnswer: (playerId: string, answerIndex: number) => void;
   submitMinigameAnswer: (playerId: string, answer: number) => void;
   submitWager: (playerId: string, percentage: number) => void;
