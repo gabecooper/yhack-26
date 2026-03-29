@@ -2,7 +2,7 @@ export const GAME_CONFIG = {
   minPlayers: 1,
   maxPlayers: 8,
   defaultQuestionCount: 8,
-  minQuestionCount: 7,
+  minQuestionCount: 8,
   questionTimerSeconds: 30,
   minigameTimerSeconds: 30,
   soloMinigameThreshold: 15,

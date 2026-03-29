@@ -219,6 +219,22 @@ Supabase Realtime is the single source of truth for all live game state, using i
 
 ## Folder Structure
 
+```text
+.
+├── client/                  # Main game client
+│   └── src/
+│       ├── assets/          # Runtime assets bundled by Vite
+│       ├── host/            # Host display flows
+│       ├── phone/           # Phone controller flows
+│       ├── shared/          # Shared UI and layout primitives
+│       └── services/        # API and Supabase integrations
+├── assets/
+│   └── raw/                 # Reference media and source art
+├── apps/
+│   └── studyslayer/         # Separate standalone app kept in-repo
+└── docs/                    # Product and deployment documentation
+```
+
 ```
 /server
   /rooms         ← room + session logic

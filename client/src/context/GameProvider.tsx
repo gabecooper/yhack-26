@@ -715,6 +715,42 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }), 'start-game:ready');
   }, [commitHostState]);
 
+  const simulateDevPlayerJoin = useCallback((characterIndex: number) => {
+    if (import.meta.env.PROD || !isHostRef.current) {
+      return;
+    }
+
+    commitHostState(previousState => {
+      if (
+        characterIndex < 0
+        || characterIndex >= GAME_CONFIG.maxPlayers
+        || previousState.players.length >= GAME_CONFIG.maxPlayers
+        || previousState.players.some(player => player.characterIndex === characterIndex)
+      ) {
+        return previousState;
+      }
+
+      const nextPlayerNumber = previousState.players.length + 1;
+
+      return {
+        ...previousState,
+        players: [
+          ...previousState.players,
+          {
+            id: `dev-player-${characterIndex}-${crypto.randomUUID()}`,
+            name: `Player ${nextPlayerNumber}`,
+            characterIndex,
+            score: GAME_CONFIG.startingBalance,
+            isEliminated: false,
+            isConnected: true,
+            currentAnswer: null,
+            minigameScore: 0,
+          },
+        ],
+      };
+    }, `dev-player:${characterIndex}`);
+  }, [commitHostState]);
+
   const submitAnswer = useCallback((playerId: string, answerIndex: number) => {
     if (isHostRef.current) {
       return;
@@ -747,7 +783,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       filename,
       uploadedBy,
       status,
-      enabled: uploadedBy === null,
+      enabled: false,
       questionCount: uploadedBy ? 0 : GAME_CONFIG.defaultQuestionCount,
     };
 
@@ -781,7 +817,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           ? {
             ...pdf,
             status: 'ready' as const,
-            enabled: true,
+            enabled: false,
             questionCount: pdf.questionCount || GAME_CONFIG.defaultQuestionCount,
           }
           : pdf
@@ -863,6 +899,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     startGame,
+    simulateDevPlayerJoin,
     submitAnswer,
     submitMinigameAnswer,
     submitWager,
@@ -879,6 +916,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     startGame,
+    simulateDevPlayerJoin,
     submitAnswer,
     submitMinigameAnswer,
     submitWager,

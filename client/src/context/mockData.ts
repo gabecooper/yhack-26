@@ -35,8 +35,8 @@ export const MOCK_QUESTIONS: Question[] = [
 ];
 
 export const MOCK_PDFS: PdfEntry[] = [
-  { id: 'pdf1', filename: 'World History 101.pdf', uploadedBy: null, status: 'ready', enabled: true, questionCount: 12 },
-  { id: 'pdf2', filename: 'Chemistry Notes.pdf', uploadedBy: 'p2', status: 'ready', enabled: true, questionCount: 8 },
+  { id: 'pdf1', filename: 'World History 101.pdf', uploadedBy: null, status: 'ready', enabled: false, questionCount: 12 },
+  { id: 'pdf2', filename: 'Chemistry Notes.pdf', uploadedBy: 'p2', status: 'ready', enabled: false, questionCount: 8 },
   { id: 'pdf3', filename: 'Astronomy Basics.pdf', uploadedBy: 'p3', status: 'pending', enabled: false, questionCount: 0 },
 ];
 

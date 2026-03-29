@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
-import lockDialImage from '../../../../lock1.png';
+import lockDialImage from '@/assets/ui/lock-dial.png';
 
 interface LockTimerProps {
   totalTime: number;

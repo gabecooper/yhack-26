@@ -2,15 +2,27 @@ import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { HostLayout } from '@/shared/components/HostLayout';
 import { useAuth } from '@/auth/AuthContext';
+import { useAppFlow } from '../AppFlowContext';
 
 export function RealStartView() {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
+  const { selectFlow, clearFlow } = useAppFlow();
 
   const handleHostEntry = () => {
     navigate(user ? '/host' : '/auth', {
       state: user ? undefined : { from: { pathname: '/host' } },
     });
+  };
+
+  const handleOpenDevFlow = () => {
+    selectFlow('dev');
+    navigate('/', { replace: true });
+  };
+
+  const handleChooseFlow = () => {
+    clearFlow();
+    navigate('/start', { replace: true });
   };
 
   return (
@@ -32,6 +44,22 @@ export function RealStartView() {
               <p className="mt-5 max-w-2xl font-ui text-lg text-white/68">
                 This mode hides the dev phase switcher and runs the heist like a real session. Host a room from the big screen or join from the phone flow.
               </p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleOpenDevFlow}
+                  className="minimal-button-secondary px-6 py-3 text-base"
+                >
+                  Open Dev Flow
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChooseFlow}
+                  className="rounded-full border border-white/15 bg-white/5 px-6 py-3 font-ui text-base font-semibold text-white/85 transition-colors hover:bg-white/10"
+                >
+                  Choose Startup Flow
+                </button>
+              </div>
             </div>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">

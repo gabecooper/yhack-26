@@ -6,6 +6,7 @@ export interface GameActions {
   joinRoom: (roomCode: string, playerName: string) => Promise<string | null>;
   leaveRoom: () => Promise<void>;
   startGame: (options?: GameStartOptions) => Promise<void>;
+  simulateDevPlayerJoin: (characterIndex: number) => void;
   submitAnswer: (playerId: string, answerIndex: number) => void;
   submitMinigameAnswer: (playerId: string, answer: number) => void;
   submitWager: (playerId: string, percentage: number) => void;

@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { AuthView } from '@/auth/views/AuthView';
 import { RequireAuth } from '@/auth/components/RequireAuth';
 import { AppFlowProvider, useAppFlow } from '@/app/AppFlowContext';
+import { isPhoneDevice } from '@/app/isPhoneDevice';
 import { StartFlowView } from '@/app/views/StartFlowView';
 import { RealStartView } from '@/app/views/RealStartView';
 
@@ -15,6 +16,10 @@ function RootRedirect() {
 
   if (isLoading || !isReady) {
     return null;
+  }
+
+  if (isPhoneDevice()) {
+    return <Navigate to="/play" replace />;
   }
 
   if (!flow) {
@@ -28,6 +33,22 @@ function RootRedirect() {
   return <Navigate to={user ? '/host' : '/auth'} replace />;
 }
 
+function StartRoute() {
+  if (isPhoneDevice()) {
+    return <Navigate to="/play" replace />;
+  }
+
+  return <StartFlowView />;
+}
+
+function RealRoute() {
+  if (isPhoneDevice()) {
+    return <Navigate to="/play" replace />;
+  }
+
+  return <RealStartView />;
+}
+
 export function App() {
   return (
     <AppFlowProvider>
@@ -35,8 +56,8 @@ export function App() {
         <GameProvider>
           <Routes>
             <Route path="/" element={<RootRedirect />} />
-            <Route path="/start" element={<StartFlowView />} />
-            <Route path="/real" element={<RealStartView />} />
+            <Route path="/start" element={<StartRoute />} />
+            <Route path="/real" element={<RealRoute />} />
             <Route path="/auth" element={<AuthView />} />
             <Route
               path="/host/*"

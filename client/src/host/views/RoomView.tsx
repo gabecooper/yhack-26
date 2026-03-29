@@ -1,20 +1,25 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { motion } from 'framer-motion';
 import { HostLayout } from '@/shared/components/HostLayout';
+import { useAppFlow } from '@/app/AppFlowContext';
 import { POLYMARKET_CATEGORIES, getPolymarketCategoryName } from '@/services/polymarket/categories';
 import { PdfManager } from '../components/PdfManager';
 import { useGameState, useGameActions } from '@/context/GameContext';
 import { GAME_CONFIG } from '@/constants/gameConfig';
-import brownStudent from '../../../../brown student .png';
-import harvardInfluencer from '../../../../harvard influencer-Picsart-BackgroundRemover.png';
-import mitFounder from '../../../../mit stinky founder-Picsart-BackgroundRemover.png';
-import whartonRaccoon from '../../../../wharton.png';
-import yalePortrait from '../../../../yale.png';
+import brownStudent from '@/assets/characters/brown-student.png';
+import harvardInfluencer from '@/assets/characters/harvard-influencer.png';
+import mitFounder from '@/assets/characters/mit-founder.png';
+import princetonNerd from '@/assets/characters/princeton-nerd.png';
+import stanfordRaccoon from '@/assets/characters/stanford-raccoon.png';
+import whartonRaccoon from '@/assets/characters/wharton-raccoon.png';
+import yalePortrait from '@/assets/characters/yale-portrait.png';
 
 const SCHOOL_CREW = [
   { label: 'Brown', image: brownStudent, scale: 1 },
   { label: 'Harvard', image: harvardInfluencer, scale: 2 },
   { label: 'MIT', image: mitFounder, scale: 2 },
+  { label: 'Princeton', image: princetonNerd, scale: 2 },
+  { label: 'Stanford', image: stanfordRaccoon, scale: 2 },
   { label: 'Wharton', image: whartonRaccoon, scale: 2 },
   { label: 'Yale', image: yalePortrait, scale: 2 },
 ];
@@ -27,12 +32,21 @@ const FRIEND_GROUP_PACKS = [
 
 type ScrapSectionId = 'polymarket' | 'coursework' | 'friends';
 
+const getCourseworkDisplayName = (filename: string) => filename.replace(/\.[^/.]+$/, '');
+const INITIAL_OPEN_SCRAP_SECTIONS: Record<ScrapSectionId, boolean> = {
+  polymarket: false,
+  coursework: true,
+  friends: false,
+};
+
 export function RoomView() {
   const { roomCode, players, pdfs, isPreparingGame } = useGameState();
-  const { startGame } = useGameActions();
-  const [openScrapId, setOpenScrapId] = useState<ScrapSectionId | null>('coursework');
+  const { startGame, simulateDevPlayerJoin } = useGameActions();
+  const { flow } = useAppFlow();
+  const [openScrapSections, setOpenScrapSections] = useState(INITIAL_OPEN_SCRAP_SECTIONS);
   const [selectedPolymarket, setSelectedPolymarket] = useState<string[]>([]);
   const [selectedFriendPacks, setSelectedFriendPacks] = useState<string[]>([]);
+  const isDevMode = flow === 'dev';
 
   const hasPlayers = players.length >= GAME_CONFIG.minPlayers;
   const hasReadyPdfs = pdfs.some(p => p.status === 'ready' && p.enabled);
@@ -40,7 +54,7 @@ export function RoomView() {
   const canStart = hasPlayers && (hasReadyPdfs || hasLivePolymarketSelections) && !isPreparingGame;
   const selectedCoursework = pdfs
     .filter(pdf => pdf.enabled)
-    .map(pdf => pdf.filename);
+    .map(pdf => getCourseworkDisplayName(pdf.filename));
   const selectedMaterials = [
     ...selectedPolymarket.map(getPolymarketCategoryName),
     ...selectedCoursework,
@@ -66,6 +80,13 @@ export function RoomView() {
         ? current.filter(item => item !== value)
         : [...current, value]
     );
+  };
+
+  const toggleScrapSection = (sectionId: ScrapSectionId) => {
+    setOpenScrapSections(current => ({
+      ...current,
+      [sectionId]: !current[sectionId],
+    }));
   };
 
   return (
@@ -108,7 +129,7 @@ export function RoomView() {
             </div>
 
             <div className="mb-4 flex flex-wrap gap-2">
-              {selectedMaterials.length > 0 ? (
+              {selectedMaterials.length > 0 &&
                 selectedMaterials.map(item => (
                   <span
                     key={item}
@@ -116,12 +137,7 @@ export function RoomView() {
                   >
                     {item}
                   </span>
-                ))
-              ) : (
-                <span className="font-ui text-xs uppercase tracking-[0.18em] text-gray-500">
-                  Selected materials will appear here.
-                </span>
-              )}
+                ))}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-2">
@@ -129,7 +145,7 @@ export function RoomView() {
               <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
                 <button
                   type="button"
-                  onClick={() => setOpenScrapId(openScrapId === 'polymarket' ? null : 'polymarket')}
+                  onClick={() => toggleScrapSection('polymarket')}
                   className="flex w-full items-start justify-between px-4 py-4 text-left"
                 >
                   <div>
@@ -141,11 +157,11 @@ export function RoomView() {
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
-                    {openScrapId === 'polymarket' ? '−' : '+'}
+                    {openScrapSections.polymarket ? '−' : '+'}
                   </span>
                 </button>
 
-                {openScrapId === 'polymarket' && (
+                {openScrapSections.polymarket && (
                   <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     <div className="grid grid-cols-2 gap-2">
                       {POLYMARKET_CATEGORIES.map(category => (
@@ -171,7 +187,7 @@ export function RoomView() {
               <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
                 <button
                   type="button"
-                  onClick={() => setOpenScrapId(openScrapId === 'coursework' ? null : 'coursework')}
+                  onClick={() => toggleScrapSection('coursework')}
                   className="flex w-full items-start justify-between px-4 py-4 text-left"
                 >
                   <div>
@@ -183,11 +199,11 @@ export function RoomView() {
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
-                    {openScrapId === 'coursework' ? '−' : '+'}
+                    {openScrapSections.coursework ? '−' : '+'}
                   </span>
                 </button>
 
-                {openScrapId === 'coursework' && (
+                {openScrapSections.coursework && (
                   <div className="border-t border-white/10 px-4 py-4">
                     <PdfManager pdfs={pdfs} />
                   </div>
@@ -197,7 +213,7 @@ export function RoomView() {
               <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
                 <button
                   type="button"
-                  onClick={() => setOpenScrapId(openScrapId === 'friends' ? null : 'friends')}
+                  onClick={() => toggleScrapSection('friends')}
                   className="flex w-full items-start justify-between px-4 py-4 text-left"
                 >
                   <div>
@@ -209,11 +225,11 @@ export function RoomView() {
                     </p>
                   </div>
                   <span className="font-ui text-xl leading-none text-white/70">
-                    {openScrapId === 'friends' ? '−' : '+'}
+                    {openScrapSections.friends ? '−' : '+'}
                   </span>
                 </button>
 
-                {openScrapId === 'friends' && (
+                {openScrapSections.friends && (
                   <div className="space-y-3 border-t border-white/10 px-4 py-4">
                     <div className="flex flex-wrap gap-2">
                       {FRIEND_GROUP_PACKS.map(pack => (
@@ -251,20 +267,43 @@ export function RoomView() {
             transition={{ delay: 0.1 }}
             className="grid flex-1 grid-cols-4 grid-rows-2 gap-x-3 gap-y-2 overflow-hidden rounded-[2rem] bg-black/15 px-6 py-5"
           >
-            {playerSlots.map(({ key, player, crewMember }) => (
-              <div key={key} className="flex h-36 items-end justify-center">
-                <img
-                  src={crewMember.image}
-                  alt={`${crewMember.label} raccoon`}
-                  className="h-32 w-24 object-contain object-bottom"
-                  style={{
-                    transform: `scale(${crewMember.scale})`,
-                    transformOrigin: 'bottom center',
-                    filter: player ? 'none' : 'grayscale(100%)',
+            {playerSlots.map(({ key, player, crewMember }, slotIndex) => {
+              const isClickableDevSlot = isDevMode && !player;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (isClickableDevSlot) {
+                      simulateDevPlayerJoin(slotIndex);
+                    }
                   }}
-                />
-              </div>
-            ))}
+                  disabled={!isClickableDevSlot}
+                  className={`flex h-36 items-end justify-center rounded-2xl transition-colors ${
+                    isClickableDevSlot
+                      ? 'cursor-pointer hover:bg-white/5'
+                      : 'cursor-default'
+                  }`}
+                  aria-label={
+                    isClickableDevSlot
+                      ? `Add a simulated player to the ${crewMember.label} slot`
+                      : undefined
+                  }
+                >
+                  <img
+                    src={crewMember.image}
+                    alt={`${crewMember.label} raccoon`}
+                    className="h-32 w-24 object-contain object-bottom"
+                    style={{
+                      transform: `scale(${crewMember.scale})`,
+                      transformOrigin: 'bottom center',
+                      filter: player ? 'none' : 'grayscale(100%)',
+                    }}
+                  />
+                </button>
+              );
+            })}
           </motion.div>
         </div>
 
